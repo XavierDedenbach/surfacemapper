@@ -77,7 +77,7 @@
 
 ##### Minor Task 1.2.1: Create backend/requirements.txt
 **Action**: Define all Python dependencies for the backend
-**What to do**: List fastapi, uvicorn, plyfile, open3d, numpy, scipy, pyproj, pydantic with specific versions
+**What to do**: List fastapi, uvicorn, plyfile, pyvista, numpy, scipy, pyproj, pydantic with specific versions (Note: PyVista provides advanced 3D mesh processing with VTK backend, including native 3D Delaunay triangulation)
 **Implementation Level**: Pinned dependency versions for reproducible builds
 **Code Estimate**: ~15 lines of package specifications
 **How to Test**: Run `pip install -r backend/requirements.txt` and verify no errors
@@ -343,7 +343,7 @@ def test_ply_format_validation():
 #### Subtask 3.2: PLY File Parsing and Processing
 
 ##### Minor Task 3.2.1 (Test First): Write PLY Parser Tests
-**Task**: Create tests for PLY file parsing into Open3D structures
+**Task**: Create tests for PLY file parsing into PyVista structures (was: Trimesh/Open3D)
 **What to do**: Create `backend/tests/test_ply_parser.py` with parsing accuracy tests
 **Implementation Level**:
 - Test ASCII PLY parsing
@@ -363,11 +363,11 @@ def test_parse_ascii_ply():
 **Acceptance Criteria**: Parser accurately extracts all vertex data
 
 ##### Minor Task 3.2.2 (Implementation): Create PLY Parser
-**Task**: Implement PLY file parser using plyfile and Open3D
+**Task**: Implement PLY file parser using plyfile and PyVista (was: Trimesh/Open3D)
 **What to do**: Create parser in `backend/app/utils/ply_parser.py`
 **Implementation Level**:
 - Use plyfile for reading PLY format
-- Convert to Open3D PointCloud
+- Convert to PyVista PointCloud/Mesh (Note: PyVista provides advanced point cloud to mesh conversion via VTK backend)
 - Handle both ASCII and binary formats
 - Extract vertex coordinates and attributes
 **Code Estimate**: ~100 lines
@@ -404,6 +404,11 @@ def test_point_cloud_filtering():
 **Code Estimate**: ~120 lines
 **How to Test**: Use tests from 3.2.3 - all processing tests must pass
 **Acceptance Criteria**: All point cloud operations work efficiently and accurately
+
+##### Minor Task 3.2.5: Validate Mesh Simplification and Point Cloud Meshing Quality with PyVista
+**Task**: Test and document the quality of mesh simplification and point cloud to mesh conversion using PyVista. PyVista provides advanced capabilities via VTK backend.
+**What to do**: Run test cases for mesh simplification and point cloud meshing. Document PyVista's advanced capabilities and compare with Open3D results if possible.
+**Acceptance Criteria**: Quality and capabilities of PyVista mesh operations are documented and validated against project requirements.
 
 #### Subtask 3.3: Memory Management and Performance
 
@@ -792,11 +797,12 @@ def test_irregular_surface_volume():
 ```
 **Acceptance Criteria**: Volume calculations accurate within ±1% for geometric primitives
 
-##### Minor Task 5.2.2 (Implementation): Implement Primary Volume Calculation (Open3D)
-**Task**: Create volume calculation using Open3D mesh operations
-**What to do**: Implement volume calculation in `backend/app/services/volume_calculator.py`
+##### Minor Task 5.2.2 (Implementation): Implement Primary Volume Calculation (PyVista)
+**Task**: Create volume calculation using PyVista mesh operations (was: Trimesh/Open3D)
+**What to do**: Implement volume calculation using PyVista mesh volume and convex hull methods. (Note: PyVista provides native 3D Delaunay triangulation and advanced volume calculation via VTK backend.)
+- Convert point clouds to meshes using PyVista
 **Implementation Level**:
-- Convert point clouds to meshes using Open3D
+- Convert point clouds to meshes using PyVista
 - Calculate volume differences using mesh operations
 - Handle surface interpolation and mesh quality
 - Optimize for large datasets
@@ -833,11 +839,11 @@ def test_volume_method_cross_validation():
     top = bottom + generate_varying_thickness(50, 50, mean=3, std=0.5)
     
     # Calculate using both methods
-    open3d_volume = calculate_volume_open3d_method(bottom, top)
+    pyvista_volume = calculate_volume_pyvista_method(bottom, top)
     prism_volume = calculate_volume_prism_method(bottom, top)
     
     # Methods should agree within tolerance
-    relative_difference = abs(open3d_volume - prism_volume) / open3d_volume
+    relative_difference = abs(pyvista_volume - prism_volume) / pyvista_volume
     assert relative_difference < 0.005  # Methods agree within 0.5%
 ```
 **Acceptance Criteria**: Secondary method provides validation within 0.5% of primary method
@@ -2105,7 +2111,4 @@ describe('Error Handling', () => {
 - **Performance Perception**: UI remains responsive during all operations
 - **Documentation Effectiveness**: Users complete tasks using documentation alone
 
-This comprehensive task breakdown provides intern-level specificity for implementing the complete Surface Volume and Layer Thickness Analysis Tool, ensuring every requirement is translated into concrete, testable development tasks.# Task Breakdown Document: Surface Volume and Layer Thickness Analysis Tool
-
-## Development Methodology
-**Test-Driven Development (TDD)**: All tasks follow the pattern: Write Tests → Implement Code → Refactor. Each task specifies exact implementation requirements, code length expectations, and testing criteria suitable for intern-level developers.
+This comprehensive task breakdown provides intern-level specificity for implementing the complete Surface Volume and Layer Thickness Analysis Tool, ensuring every requirement is translated into concrete, testable development tasks.

@@ -142,7 +142,7 @@ Process surfaces for volume and thickness analysis.
   ],
   "processing_params": {
     "volume_calculation": {
-      "primary_algorithm": "open3d_delaunay",
+      "primary_algorithm": "pyvista_delaunay",
       "validation_tolerance": 1.0
     }
   }
@@ -393,7 +393,7 @@ Get current processing configuration.
 ```json
 {
   "volume_calculation": {
-    "primary_algorithm": "open3d_delaunay",
+    "primary_algorithm": "pyvista_delaunay",
     "validation_tolerance": 1.0
   },
   "surface_processing": {
@@ -411,7 +411,7 @@ Update processing configuration.
 ```json
 {
   "volume_calculation": {
-    "primary_algorithm": "open3d_delaunay",
+    "primary_algorithm": "pyvista_delaunay",
     "validation_tolerance": 2.0
   }
 }

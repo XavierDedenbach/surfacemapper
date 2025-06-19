@@ -118,7 +118,7 @@ This application will utilize a Python backend for all heavy-duty data processin
 **FR-C6.1.1**: The backend shall calculate the net volume difference between each successive pair of surfaces (e.g., Surface 1 relative to Surface 0, Surface 2 relative to Surface 1) within the defined analysis boundary.
 
 **FR-C6.1.2 (ENHANCED)**: Volume calculations shall utilize Delaunay triangulation-based algorithms with the following hierarchy:
-- **Primary**: Open3D's convex hull and mesh volume calculations using Delaunay triangulation
+- **Primary**: PyVista's convex hull and mesh volume calculations using Delaunay triangulation (Note: PyVista provides native 3D Delaunay triangulation via VTK backend, superior to Trimesh's 2D-only approach)
 - **Secondary**: CGAL-based exact geometric computations for precision-critical applications
 - **Validation**: Cross-validation between methods with <1% tolerance requirements
 - **Algorithm**: Delaunay Triangulation-Based Volume Calculation (DTVC) for irregular surfaces achieving <3% error for typical applications
@@ -142,7 +142,7 @@ This application will utilize a Python backend for all heavy-duty data processin
 **FR-C6.3.4**: If tonnage is not provided for a specific layer, the compaction rate for that layer in the output table shall be displayed as "--".
 
 ### 6.7. 3D Visualization (Frontend leveraging Backend)
-**FR-V7.1**: The Python backend, leveraging Open3D, shall process the surface .ply data and prepare it for 3D visualization. This preparation includes generating simplified meshes or extracting vertex data suitable for efficient transfer to the frontend.
+**FR-V7.1**: The Python backend, leveraging PyVista, shall process the surface .ply data and prepare it for 3D visualization. This preparation includes generating simplified meshes or extracting vertex data suitable for efficient transfer to the frontend. (Note: PyVista provides advanced mesh simplification and point cloud meshing via VTK backend, superior to Trimesh capabilities.)
 
 **FR-V7.2**: The React frontend, using Three.js, shall render a 3D visualization of all selected surfaces, stacked vertically according to their actual Z-coordinates.
 
@@ -259,7 +259,7 @@ This application will utilize a Python backend for all heavy-duty data processin
 
 **Surface Data Gaps/Noise**: The backend algorithms for volume and thickness calculation should gracefully handle minor gaps or noise inherent in drone-scanned data through interpolation or robust statistical methods.
 
-**Algorithm Performance**: Primary algorithms shall be implemented using Open3D for optimal performance, with CGAL as fallback for precision-critical calculations requiring exact arithmetic.
+**Algorithm Performance**: Primary algorithms shall be implemented using PyVista for optimal performance, with CGAL as fallback for precision-critical calculations requiring exact arithmetic. (Note: PyVista provides native 3D Delaunay triangulation and advanced mesh operations via VTK backend.)
 
 ## 10. Development Log
 

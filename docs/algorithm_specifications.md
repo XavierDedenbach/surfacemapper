@@ -9,7 +9,7 @@ This document provides detailed specifications for the algorithms used in the Su
 ### 1.1 Delaunay Triangulation-Based Volume Calculation (DTVC)
 
 **Algorithm Type**: Primary volume calculation method
-**Implementation**: Open3D library
+**Implementation**: PyVista library (Note: PyVista provides native 3D Delaunay triangulation via VTK backend, superior to Trimesh's 2D-only approach)
 **Accuracy Target**: <3% error for typical applications
 
 #### Algorithm Steps:
@@ -20,12 +20,12 @@ This document provides detailed specifications for the algorithms used in the Su
    - Decimate point cloud if necessary for performance
 
 2. **Delaunay Triangulation**
-   - Generate 2D Delaunay triangulation from X-Y coordinates
-   - Create 3D surface mesh by projecting Z-coordinates onto triangulation
+   - Generate 2D Delaunay triangulation from X-Y coordinates (PyVista + VTK backend)
+   - Create 3D surface mesh by projecting Z-coordinates onto triangulation (PyVista)
    - Ensure triangulation covers the entire analysis boundary
 
 3. **Volume Calculation**
-   - Calculate volume between successive surfaces using signed volume method
+   - Calculate volume between successive surfaces using signed volume method (PyVista mesh volume for watertight meshes; advanced algorithms for complex surfaces via VTK backend)
    - Apply boundary clipping to analysis area
    - Sum individual tetrahedral volumes
 
@@ -349,7 +349,7 @@ Compaction Rate (lbs/cubic yard) = (Input Tonnage × 2000 lbs/ton) / Calculated 
 
 ## References
 
-1. Open3D Documentation: http://www.open3d.org/docs/
+1. PyVista Documentation: https://docs.pyvista.org/ (Note: VTK backend provides industry-standard 3D processing capabilities)
 2. CGAL Documentation: https://doc.cgal.org/
 3. PyProj Documentation: https://pyproj4.github.io/pyproj/
 4. Delaunay Triangulation: Computational Geometry Algorithms and Applications

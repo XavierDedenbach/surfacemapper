@@ -32,7 +32,7 @@ backend/
 
 - **PLY File Processing**: Parse and validate .ply surface files
 - **Coordinate Transformation**: Transform local coordinates to geo-referenced systems using pyproj
-- **Volume Calculation**: Calculate volume differences between surfaces using Open3D
+- **Volume Calculation**: Calculate volume differences between surfaces using PyVista (Note: PyVista provides native 3D Delaunay triangulation and advanced mesh operations via VTK backend)
 - **Thickness Analysis**: Compute layer thickness statistics
 - **Compaction Rate**: Calculate compaction rates from tonnage inputs
 - **RESTful API**: FastAPI-based endpoints for all operations
@@ -43,7 +43,7 @@ Key dependencies include:
 - `fastapi`: Web framework
 - `uvicorn`: ASGI server
 - `plyfile`: PLY file parsing
-- `open3d`: 3D geometry processing
+- `pyvista`: 3D geometry processing (replaces Trimesh/Open3D; provides advanced capabilities via VTK backend)
 - `numpy`: Numerical computations
 - `pyproj`: Coordinate transformations
 - `pydantic`: Data validation
