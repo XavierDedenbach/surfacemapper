@@ -260,3 +260,7 @@ This application will utilize a Python backend for all heavy-duty data processin
 **Surface Data Gaps/Noise**: The backend algorithms for volume and thickness calculation should gracefully handle minor gaps or noise inherent in drone-scanned data through interpolation or robust statistical methods.
 
 **Algorithm Performance**: Primary algorithms shall be implemented using Open3D for optimal performance, with CGAL as fallback for precision-critical calculations requiring exact arithmetic.
+
+## 10. Development Log
+
+- All tasks once complete must append the summary of their changes, which tests passed and the open items to requirements/task_tracking.md
