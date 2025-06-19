@@ -1,0 +1,208 @@
+# Default Processing Parameters for Surface Mapper
+# This file contains default values for various processing algorithms
+
+# Volume Calculation Parameters
+volume_calculation:
+  # Primary algorithm selection
+  primary_algorithm: "open3d_delaunay"
+  # Secondary algorithm for validation
+  secondary_algorithm: "cgal_exact"
+  # Tolerance for cross-validation between methods (percentage)
+  validation_tolerance: 1.0
+  # Target accuracy for typical applications (percentage)
+  target_accuracy: 3.0
+  # Maximum error threshold before warning (percentage)
+  max_error_threshold: 5.0
+
+# Surface Processing Parameters
+surface_processing:
+  # Point cloud decimation factor (1.0 = no decimation)
+  decimation_factor: 1.0
+  # Maximum number of points to process (0 = unlimited)
+  max_points: 50000000
+  # Minimum number of points required for processing
+  min_points: 1000
+  # Point cloud filtering parameters
+  filtering:
+    # Remove statistical outliers
+    remove_outliers: true
+    # Number of neighbors for outlier detection
+    outlier_neighbors: 20
+    # Standard deviation multiplier for outlier detection
+    outlier_std_dev: 2.0
+    # Smooth surface using moving average
+    smoothing: false
+    # Smoothing window size
+    smoothing_window: 5
+
+# Triangulation Parameters
+triangulation:
+  # Delaunay triangulation parameters
+  delaunay:
+    # Angle constraint for triangulation (degrees)
+    angle_constraint: 20.0
+    # Edge length constraint (in coordinate units)
+    edge_length_constraint: 0.0
+    # Maximum triangle area constraint
+    area_constraint: 0.0
+  # TIN (Triangulated Irregular Network) parameters
+  tin:
+    # Maximum triangle edge length
+    max_edge_length: 100.0
+    # Minimum triangle angle (degrees)
+    min_angle: 10.0
+    # Maximum triangle angle (degrees)
+    max_angle: 170.0
+
+# Coordinate Transformation Parameters
+coordinate_transformation:
+  # Default source coordinate system
+  default_source: "WGS84"
+  # Default target coordinate system
+  default_target: "UTM_NAD83_Zone_10N"
+  # Transformation accuracy threshold (meters)
+  accuracy_threshold: 0.1
+  # Use 7-parameter Helmert transformation when possible
+  use_helmert: true
+  # Apply scale factor correction
+  apply_scale_correction: true
+
+# Analysis Boundary Parameters
+analysis_boundary:
+  # Minimum boundary area (square meters)
+  min_area: 100.0
+  # Maximum boundary area (square meters)
+  max_area: 10000000.0
+  # Buffer distance around boundary (meters)
+  buffer_distance: 10.0
+  # Validate boundary geometry
+  validate_geometry: true
+  # Ensure boundary is closed polygon
+  ensure_closed: true
+
+# Thickness Calculation Parameters
+thickness_calculation:
+  # Interpolation method for thickness calculation
+  interpolation_method: "linear"
+  # Grid resolution for thickness raster (meters)
+  grid_resolution: 1.0
+  # Minimum thickness threshold (feet)
+  min_thickness: 0.01
+  # Maximum thickness threshold (feet)
+  max_thickness: 100.0
+  # Confidence interval calculation
+  confidence_interval: 95.0
+
+# Compaction Rate Parameters
+compaction_rate:
+  # Default material density (lbs/cubic yard)
+  default_density: 2700.0
+  # Material density variations (percentage)
+  density_variation: 10.0
+  # Confidence range for compaction rate (percentage)
+  confidence_range: 5.0
+  # Minimum tonnage for compaction calculation
+  min_tonnage: 0.1
+
+# Performance Parameters
+performance:
+  # Maximum memory usage (GB)
+  max_memory_gb: 8.0
+  # Number of parallel processing threads
+  parallel_threads: 4
+  # Chunk size for large datasets
+  chunk_size: 1000000
+  # Timeout for processing operations (seconds)
+  timeout_seconds: 1200
+  # Enable progress reporting
+  enable_progress: true
+
+# Quality Assurance Parameters
+quality_assurance:
+  # Enable automatic quality checks
+  enable_qa: true
+  # Minimum overlap between surfaces (percentage)
+  min_overlap: 50.0
+  # Maximum gap between surfaces (feet)
+  max_gap: 10.0
+  # Validate surface continuity
+  check_continuity: true
+  # Detect and report anomalies
+  detect_anomalies: true
+  # Generate quality report
+  generate_report: true
+
+# Export Parameters
+export:
+  # Default export format
+  default_format: "json"
+  # Available export formats
+  available_formats:
+    - "json"
+    - "csv"
+    - "xlsx"
+    - "pdf"
+  # Include metadata in exports
+  include_metadata: true
+  # Include confidence intervals
+  include_confidence: true
+  # Include processing parameters
+  include_parameters: true
+  # Compression for large exports
+  enable_compression: true
+
+# Logging Parameters
+logging:
+  # Log level (DEBUG, INFO, WARNING, ERROR)
+  level: "INFO"
+  # Enable file logging
+  file_logging: true
+  # Log file path
+  log_file: "logs/surface_mapper.log"
+  # Maximum log file size (MB)
+  max_file_size: 100
+  # Number of backup log files
+  backup_count: 5
+  # Include performance metrics in logs
+  log_performance: true
+  # Include processing details in logs
+  log_details: true
+
+# Validation Parameters
+validation:
+  # Validate input files before processing
+  validate_input: true
+  # Check file format compatibility
+  check_format: true
+  # Validate coordinate system parameters
+  validate_coordinates: true
+  # Check for required fields
+  check_required_fields: true
+  # Maximum file size (GB)
+  max_file_size_gb: 2.0
+  # Allowed file extensions
+  allowed_extensions:
+    - ".ply"
+    - ".obj"
+    - ".stl"
+
+# Error Handling Parameters
+error_handling:
+  # Continue processing on non-critical errors
+  continue_on_warnings: true
+  # Maximum number of retries for failed operations
+  max_retries: 3
+  # Retry delay (seconds)
+  retry_delay: 5
+  # Graceful degradation for large datasets
+  graceful_degradation: true
+  # Generate error reports
+  generate_error_reports: true
+
+# Metadata
+metadata:
+  version: "1.0"
+  description: "Default processing parameters for Surface Mapper"
+  last_updated: "2024-12-19"
+  author: "Surface Mapper Development Team"
+  notes: "These parameters can be overridden by user input or project-specific configurations" 

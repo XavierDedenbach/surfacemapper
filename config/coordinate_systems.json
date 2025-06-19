@@ -1,0 +1,328 @@
+{
+  "coordinate_systems": {
+    "WGS84": {
+      "name": "WGS84",
+      "description": "World Geodetic System 1984",
+      "epsg_code": "EPSG:4326",
+      "type": "geographic",
+      "units": "degrees",
+      "datum": "WGS84",
+      "ellipsoid": "WGS84"
+    },
+    "UTM_NAD83_Zone_10N": {
+      "name": "UTM NAD83 Zone 10N",
+      "description": "Universal Transverse Mercator NAD83 Zone 10N",
+      "epsg_code": "EPSG:26910",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 10,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_11N": {
+      "name": "UTM NAD83 Zone 11N",
+      "description": "Universal Transverse Mercator NAD83 Zone 11N",
+      "epsg_code": "EPSG:26911",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 11,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_12N": {
+      "name": "UTM NAD83 Zone 12N",
+      "description": "Universal Transverse Mercator NAD83 Zone 12N",
+      "epsg_code": "EPSG:26912",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 12,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_13N": {
+      "name": "UTM NAD83 Zone 13N",
+      "description": "Universal Transverse Mercator NAD83 Zone 13N",
+      "epsg_code": "EPSG:26913",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 13,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_14N": {
+      "name": "UTM NAD83 Zone 14N",
+      "description": "Universal Transverse Mercator NAD83 Zone 14N",
+      "epsg_code": "EPSG:26914",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 14,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_15N": {
+      "name": "UTM NAD83 Zone 15N",
+      "description": "Universal Transverse Mercator NAD83 Zone 15N",
+      "epsg_code": "EPSG:26915",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 15,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_16N": {
+      "name": "UTM NAD83 Zone 16N",
+      "description": "Universal Transverse Mercator NAD83 Zone 16N",
+      "epsg_code": "EPSG:26916",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 16,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_17N": {
+      "name": "UTM NAD83 Zone 17N",
+      "description": "Universal Transverse Mercator NAD83 Zone 17N",
+      "epsg_code": "EPSG:26917",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 17,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_18N": {
+      "name": "UTM NAD83 Zone 18N",
+      "description": "Universal Transverse Mercator NAD83 Zone 18N",
+      "epsg_code": "EPSG:26918",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 18,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_19N": {
+      "name": "UTM NAD83 Zone 19N",
+      "description": "Universal Transverse Mercator NAD83 Zone 19N",
+      "epsg_code": "EPSG:26919",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 19,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_20N": {
+      "name": "UTM NAD83 Zone 20N",
+      "description": "Universal Transverse Mercator NAD83 Zone 20N",
+      "epsg_code": "EPSG:26920",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 20,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_21N": {
+      "name": "UTM NAD83 Zone 21N",
+      "description": "Universal Transverse Mercator NAD83 Zone 21N",
+      "epsg_code": "EPSG:26921",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 21,
+      "hemisphere": "N"
+    },
+    "UTM_NAD83_Zone_22N": {
+      "name": "UTM NAD83 Zone 22N",
+      "description": "Universal Transverse Mercator NAD83 Zone 22N",
+      "epsg_code": "EPSG:26922",
+      "type": "projected",
+      "units": "meters",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "zone": 22,
+      "hemisphere": "N"
+    },
+    "State_Plane_NAD83_California_Zone_1": {
+      "name": "State Plane NAD83 California Zone 1",
+      "description": "State Plane Coordinate System NAD83 California Zone 1",
+      "epsg_code": "EPSG:26741",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "California",
+      "zone": 1
+    },
+    "State_Plane_NAD83_California_Zone_2": {
+      "name": "State Plane NAD83 California Zone 2",
+      "description": "State Plane Coordinate System NAD83 California Zone 2",
+      "epsg_code": "EPSG:26742",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "California",
+      "zone": 2
+    },
+    "State_Plane_NAD83_California_Zone_3": {
+      "name": "State Plane NAD83 California Zone 3",
+      "description": "State Plane Coordinate System NAD83 California Zone 3",
+      "epsg_code": "EPSG:26743",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "California",
+      "zone": 3
+    },
+    "State_Plane_NAD83_California_Zone_4": {
+      "name": "State Plane NAD83 California Zone 4",
+      "description": "State Plane Coordinate System NAD83 California Zone 4",
+      "epsg_code": "EPSG:26744",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "California",
+      "zone": 4
+    },
+    "State_Plane_NAD83_California_Zone_5": {
+      "name": "State Plane NAD83 California Zone 5",
+      "description": "State Plane Coordinate System NAD83 California Zone 5",
+      "epsg_code": "EPSG:26745",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "California",
+      "zone": 5
+    },
+    "State_Plane_NAD83_California_Zone_6": {
+      "name": "State Plane NAD83 California Zone 6",
+      "description": "State Plane Coordinate System NAD83 California Zone 6",
+      "epsg_code": "EPSG:26746",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "California",
+      "zone": 6
+    },
+    "State_Plane_NAD83_Texas_Central": {
+      "name": "State Plane NAD83 Texas Central",
+      "description": "State Plane Coordinate System NAD83 Texas Central",
+      "epsg_code": "EPSG:26748",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Texas",
+      "zone": "Central"
+    },
+    "State_Plane_NAD83_Texas_North_Central": {
+      "name": "State Plane NAD83 Texas North Central",
+      "description": "State Plane Coordinate System NAD83 Texas North Central",
+      "epsg_code": "EPSG:26749",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Texas",
+      "zone": "North Central"
+    },
+    "State_Plane_NAD83_Texas_South_Central": {
+      "name": "State Plane NAD83 Texas South Central",
+      "description": "State Plane Coordinate System NAD83 Texas South Central",
+      "epsg_code": "EPSG:26750",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Texas",
+      "zone": "South Central"
+    },
+    "State_Plane_NAD83_Florida_East": {
+      "name": "State Plane NAD83 Florida East",
+      "description": "State Plane Coordinate System NAD83 Florida East",
+      "epsg_code": "EPSG:26756",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Florida",
+      "zone": "East"
+    },
+    "State_Plane_NAD83_Florida_West": {
+      "name": "State Plane NAD83 Florida West",
+      "description": "State Plane Coordinate System NAD83 Florida West",
+      "epsg_code": "EPSG:26757",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Florida",
+      "zone": "West"
+    },
+    "State_Plane_NAD83_Florida_North": {
+      "name": "State Plane NAD83 Florida North",
+      "description": "State Plane Coordinate System NAD83 Florida North",
+      "epsg_code": "EPSG:26758",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Florida",
+      "zone": "North"
+    },
+    "State_Plane_NAD83_Colorado_Central": {
+      "name": "State Plane NAD83 Colorado Central",
+      "description": "State Plane Coordinate System NAD83 Colorado Central",
+      "epsg_code": "EPSG:26753",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Colorado",
+      "zone": "Central"
+    },
+    "State_Plane_NAD83_Colorado_North": {
+      "name": "State Plane NAD83 Colorado North",
+      "description": "State Plane Coordinate System NAD83 Colorado North",
+      "epsg_code": "EPSG:26754",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Colorado",
+      "zone": "North"
+    },
+    "State_Plane_NAD83_Colorado_South": {
+      "name": "State Plane NAD83 Colorado South",
+      "description": "State Plane Coordinate System NAD83 Colorado South",
+      "epsg_code": "EPSG:26755",
+      "type": "projected",
+      "units": "feet",
+      "datum": "NAD83",
+      "ellipsoid": "GRS80",
+      "state": "Colorado",
+      "zone": "South"
+    }
+  },
+  "metadata": {
+    "version": "1.0",
+    "description": "Predefined coordinate system templates for Surface Mapper",
+    "last_updated": "2024-12-19",
+    "source": "EPSG Registry",
+    "notes": "These coordinate systems are commonly used in surveying and construction applications in the United States"
+  }
+} 
