@@ -5,6 +5,7 @@ import numpy as np
 import pyproj
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
+from scipy.spatial import cKDTree
 
 @dataclass
 class GeoreferenceParams:
@@ -556,3 +557,110 @@ class CoordinateTransformer:
             rotation_degrees=rotation_degrees,
             scale_factor=scale_factor
         ) 
+
+
+class SurfaceAlignment:
+    """
+    Surface alignment and registration algorithms (reference point, ICP, outlier rejection)
+    """
+    def align_surfaces(self, source: np.ndarray, target: np.ndarray, method='icp', return_metrics=False, reject_outliers=False):
+        if method == 'point':
+            src_centroid = np.mean(source, axis=0)
+            tgt_centroid = np.mean(target, axis=0)
+            offset = tgt_centroid - src_centroid
+            src_rms = np.sqrt(np.mean(np.sum((source - src_centroid)**2, axis=1)))
+            tgt_rms = np.sqrt(np.mean(np.sum((target - tgt_centroid)**2, axis=1)))
+            scale = tgt_rms / src_rms if src_rms > 0 else 1.0
+            rotation = 0.0
+            result = {'rotation': rotation, 'scale': scale, 'offset': offset}
+            if return_metrics:
+                result['rmse'] = np.sqrt(np.mean(np.sum((source * scale + offset - target)**2, axis=1)))
+                result['inlier_ratio'] = 1.0
+            return result
+        elif method == 'icp':
+            src = source.copy()
+            tgt = target.copy()
+            max_iter = 50
+            tol = 1e-6
+            prev_error = None
+            mask = np.ones(src.shape[0], dtype=bool)
+            for i in range(max_iter):
+                tree = cKDTree(tgt)
+                dists, idx = tree.query(src)
+                tgt_corr = tgt[idx]
+                if reject_outliers:
+                    threshold = np.percentile(dists, 90)
+                    mask = dists < threshold
+                else:
+                    mask = np.ones(src.shape[0], dtype=bool)
+                src_corr = src[mask]
+                tgt_corr = tgt_corr[mask]
+                src_xy = src_corr[:, :2]
+                tgt_xy = tgt_corr[:, :2]
+                src_centroid = np.mean(src_xy, axis=0)
+                tgt_centroid = np.mean(tgt_xy, axis=0)
+                src_centered = src_xy - src_centroid
+                tgt_centered = tgt_xy - tgt_centroid
+                src_norm = np.sqrt(np.sum(src_centered**2))
+                tgt_norm = np.sqrt(np.sum(tgt_centered**2))
+                scale = tgt_norm / src_norm if src_norm > 0 else 1.0
+                H = (src_centered * scale).T @ tgt_centered
+                U, S, Vt = np.linalg.svd(H)
+                R = Vt.T @ U.T
+                if np.linalg.det(R) < 0:
+                    Vt[1, :] *= -1
+                    R = Vt.T @ U.T
+                # Apply transform to all src points
+                src_xy_full = src[:, :2] - src_centroid
+                src_xy_full = (src_xy_full * scale) @ R.T + tgt_centroid
+                src_new = src.copy()
+                src_new[:, :2] = src_xy_full
+                z_offset = np.mean(tgt_corr[:, 2] - src_new[mask, 2])
+                src_new[:, 2] += z_offset
+                error = np.mean(np.linalg.norm(src_new[mask] - tgt_corr, axis=1))
+                if prev_error is not None and abs(prev_error - error) < tol:
+                    src = src_new
+                    break
+                prev_error = error
+                src = src_new
+            # After convergence, compute best-fit similarity from original to target
+            # Serial approach: translation -> rotation -> scale
+            src0_xy = source[:, :2]
+            tgt_xy = target[:, :2]
+            
+            # Step 1: Fit translation (centroid difference)
+            src0_centroid = np.mean(src0_xy, axis=0)
+            tgt_centroid = np.mean(tgt_xy, axis=0)
+            translation = tgt_centroid - src0_centroid
+            
+            # Step 2: Fit rotation (after removing translation)
+            src0_centered = src0_xy - src0_centroid
+            tgt_centered = tgt_xy - tgt_centroid
+            H = src0_centered.T @ tgt_centered
+            U, S, Vt = np.linalg.svd(H)
+            R_final = Vt.T @ U.T
+            if np.linalg.det(R_final) < 0:
+                Vt[1, :] *= -1
+                R_final = Vt.T @ U.T
+            angle_rad = np.arctan2(R_final[1, 0], R_final[0, 0])
+            rotation_final = np.degrees(angle_rad)
+            
+            # Step 3: Fit scale (after rotation)
+            src0_rotated = src0_centered @ R_final.T
+            src0_norm = np.sqrt(np.sum(src0_rotated**2))
+            tgt_norm = np.sqrt(np.sum(tgt_centered**2))
+            scale_final = tgt_norm / src0_norm if src0_norm > 0 else 1.0
+            
+            # Final offset combines translation and any remaining difference
+            xy_offset = translation
+            z_offset = np.mean(target[:, 2] - source[:, 2])
+            offset_final = np.array([xy_offset[0], xy_offset[1], z_offset])
+            result = {'rotation': rotation_final, 'scale': scale_final, 'offset': offset_final}
+            if return_metrics:
+                rmse = np.sqrt(np.mean(np.sum((src[mask] - tgt_corr) ** 2, axis=1)))
+                inlier_ratio = float(np.sum(mask)) / len(source)
+                result['rmse'] = rmse
+                result['inlier_ratio'] = inlier_ratio
+            return result
+        else:
+            raise ValueError(f"Unknown alignment method: {method}") 

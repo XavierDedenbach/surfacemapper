@@ -2112,3 +2112,205 @@ describe('Error Handling', () => {
 - **Documentation Effectiveness**: Users complete tasks using documentation alone
 
 This comprehensive task breakdown provides intern-level specificity for implementing the complete Surface Volume and Layer Thickness Analysis Tool, ensuring every requirement is translated into concrete, testable development tasks.
+
+## Future Iterations: Advanced Features and Improvements
+
+### Major Task 8.0: Robust Surface Alignment with Advanced Outlier Rejection
+
+#### Subtask 8.1: Enhanced Outlier Detection and Rejection
+
+##### Minor Task 8.1.1 (Test First): Write Robust Outlier Rejection Tests
+**Task**: Create comprehensive tests for advanced outlier rejection methods
+**What to do**: Test RANSAC-based outlier rejection, iterative trimming, and statistical outlier detection
+**Implementation Level**:
+- Test RANSAC with varying outlier percentages (10%, 20%, 30%)
+- Test iterative outlier rejection with convergence criteria
+- Test statistical methods (MAD, IQR-based outlier detection)
+- Test performance with large datasets containing outliers
+**Code Estimate**: ~80 lines of test code
+**How to Test**:
+```python
+def test_ransac_outlier_rejection():
+    # Create surface with 20% outliers
+    surface1 = create_test_surface(1000)
+    surface2 = surface1.copy()
+    outlier_indices = np.random.choice(1000, 200, replace=False)
+    surface2[outlier_indices] += np.random.normal(0, 50, (200, 3))
+    
+    result = align_surfaces_ransac(surface1, surface2, max_iterations=100)
+    assert result['inlier_ratio'] > 0.8
+    assert abs(result['rotation']) < 1.0
+    assert abs(result['scale'] - 1.0) < 0.01
+
+def test_iterative_outlier_trimming():
+    # Test iterative outlier removal
+    surface1 = create_test_surface(500)
+    surface2 = surface1.copy()
+    surface2[:50] += 100  # 10% outliers
+    
+    result = align_surfaces_iterative(surface1, surface2, trim_percentile=90)
+    assert result['final_inlier_count'] > 400
+    assert result['convergence_iterations'] < 10
+```
+**Acceptance Criteria**: All outlier rejection methods handle 30%+ outliers while maintaining alignment accuracy
+
+##### Minor Task 8.1.2 (Implementation): Implement RANSAC-Based Surface Alignment
+**Task**: Create robust surface alignment using RANSAC for outlier rejection
+**What to do**: Implement RANSAC algorithm for surface alignment with configurable parameters
+**Implementation Level**:
+- RANSAC with random sampling of point correspondences
+- Consensus set evaluation using alignment quality metrics
+- Iterative refinement of transformation parameters
+- Automatic parameter tuning based on outlier percentage
+**Code Estimate**: ~150 lines
+**How to Test**: Use tests from 8.1.1 - all RANSAC tests must pass
+**Acceptance Criteria**: RANSAC alignment handles 50% outliers with >95% success rate
+
+##### Minor Task 8.1.3 (Test First): Write Statistical Outlier Detection Tests
+**Task**: Create tests for statistical outlier detection methods
+**What to do**: Test MAD (Median Absolute Deviation) and IQR-based outlier detection
+**Implementation Level**:
+- Test MAD-based outlier detection with configurable thresholds
+- Test IQR-based outlier detection for different distributions
+- Test adaptive threshold selection based on data characteristics
+- Test performance comparison between methods
+**Code Estimate**: ~60 lines of test code
+**How to Test**:
+```python
+def test_mad_outlier_detection():
+    data = np.random.normal(0, 1, 1000)
+    data[100:120] += 10  # Add outliers
+    outliers = detect_outliers_mad(data, threshold=3.0)
+    assert 100 <= len(outliers) <= 120
+    assert all(100 <= i <= 120 for i in outliers)
+
+def test_adaptive_threshold_selection():
+    # Test automatic threshold selection
+    data = generate_mixed_data(clean_ratio=0.8, noise_level=0.1)
+    threshold = select_adaptive_threshold(data)
+    outliers = detect_outliers_mad(data, threshold=threshold)
+    assert 0.15 <= len(outliers)/len(data) <= 0.25
+```
+**Acceptance Criteria**: Statistical methods correctly identify outliers with <5% false positive rate
+
+##### Minor Task 8.1.4 (Implementation): Implement Statistical Outlier Detection
+**Task**: Create statistical outlier detection algorithms
+**What to do**: Implement MAD and IQR-based outlier detection with adaptive thresholds
+**Implementation Level**:
+- MAD-based outlier detection with robust statistics
+- IQR-based outlier detection for skewed distributions
+- Adaptive threshold selection using data characteristics
+- Performance optimization for large datasets
+**Code Estimate**: ~100 lines
+**How to Test**: Use tests from 8.1.3 - all statistical outlier tests must pass
+**Acceptance Criteria**: Statistical methods provide reliable outlier detection for various data distributions
+
+#### Subtask 8.2: Performance Optimization for Large Datasets
+
+##### Minor Task 8.2.1 (Test First): Write Large Dataset Alignment Tests
+**Task**: Create performance tests for surface alignment with large datasets
+**What to do**: Test alignment performance with 1M+ point surfaces containing outliers
+**Implementation Level**:
+- Test alignment time with 1M, 5M, 10M point surfaces
+- Test memory usage during alignment process
+- Test parallel processing for large datasets
+- Test accuracy vs. performance trade-offs
+**Code Estimate**: ~70 lines of test code
+**How to Test**:
+```python
+def test_large_dataset_alignment_performance():
+    surface1 = create_large_surface(1000000)
+    surface2 = surface1.copy()
+    surface2[:100000] += np.random.normal(0, 10, (100000, 3))  # 10% outliers
+    
+    start_time = time.time()
+    result = align_surfaces_parallel(surface1, surface2, n_jobs=4)
+    elapsed = time.time() - start_time
+    
+    assert elapsed < 60.0  # Must complete in <60 seconds
+    assert result['inlier_ratio'] > 0.85
+    assert result['rmse'] < 0.5
+```
+**Acceptance Criteria**: Large dataset alignment completes within performance requirements
+
+##### Minor Task 8.2.2 (Implementation): Implement Parallel Surface Alignment
+**Task**: Create parallel processing for surface alignment algorithms
+**What to do**: Implement parallel RANSAC and outlier detection for large datasets
+**Implementation Level**:
+- Parallel RANSAC with multiple worker processes
+- Chunked processing for memory-efficient large dataset handling
+- Load balancing for optimal parallel performance
+- Progress tracking and cancellation support
+**Code Estimate**: ~120 lines
+**How to Test**: Use tests from 8.2.1 - all performance tests must pass
+**Acceptance Criteria**: Parallel alignment provides 2-4x speedup on multi-core systems
+
+#### Subtask 8.3: Quality Assessment and Validation
+
+##### Minor Task 8.3.1 (Test First): Write Alignment Quality Assessment Tests
+**Task**: Create comprehensive tests for alignment quality assessment
+**What to do**: Test quality metrics, confidence intervals, and validation methods
+**Implementation Level**:
+- Test alignment quality metrics (RMSE, inlier ratio, confidence)
+- Test cross-validation between different alignment methods
+- Test quality assessment for edge cases and degenerate data
+- Test automated quality reporting and recommendations
+**Code Estimate**: ~80 lines of test code
+**How to Test**:
+```python
+def test_alignment_quality_assessment():
+    surface1 = create_test_surface(1000)
+    surface2 = surface1.copy()
+    surface2[:100] += np.random.normal(0, 5, (100, 3))  # 10% noise
+    
+    quality = assess_alignment_quality(surface1, surface2)
+    assert quality['rmse'] < 1.0
+    assert quality['inlier_ratio'] > 0.9
+    assert quality['confidence'] > 0.95
+    assert quality['recommendation'] in ['good', 'acceptable', 'poor']
+
+def test_cross_validation_alignment():
+    # Test agreement between different alignment methods
+    surface1 = create_test_surface(500)
+    surface2 = surface1.copy()
+    surface2[:50] += 20  # 10% outliers
+    
+    result1 = align_surfaces_ransac(surface1, surface2)
+    result2 = align_surfaces_iterative(surface1, surface2)
+    
+    # Methods should agree within tolerance
+    assert abs(result1['rotation'] - result2['rotation']) < 1.0
+    assert abs(result1['scale'] - result2['scale']) < 0.01
+```
+**Acceptance Criteria**: Quality assessment provides reliable metrics and actionable recommendations
+
+##### Minor Task 8.3.2 (Implementation): Implement Alignment Quality Assessment
+**Task**: Create comprehensive quality assessment system for surface alignment
+**What to do**: Implement quality metrics, confidence estimation, and validation methods
+**Implementation Level**:
+- Multiple quality metrics (RMSE, inlier ratio, geometric consistency)
+- Confidence interval estimation using bootstrap methods
+- Cross-validation between alignment algorithms
+- Automated quality reporting with recommendations
+**Code Estimate**: ~150 lines
+**How to Test**: Use tests from 8.3.1 - all quality assessment tests must pass
+**Acceptance Criteria**: Quality assessment system provides actionable insights for alignment quality
+
+### Success Metrics for Future Iterations
+
+#### Robustness Improvements
+- **Outlier Tolerance**: Handle 50% outliers with >95% success rate
+- **Data Quality**: Maintain alignment accuracy with noisy, incomplete, or corrupted data
+- **Edge Cases**: Robust handling of degenerate geometries and extreme transformations
+
+#### Performance Enhancements
+- **Large Dataset Support**: 10M+ point surfaces with <2 minute alignment time
+- **Parallel Processing**: 2-4x speedup on multi-core systems
+- **Memory Efficiency**: <16GB memory usage for largest supported datasets
+
+#### Quality Assurance
+- **Automated Validation**: Cross-validation between multiple alignment methods
+- **Quality Metrics**: Comprehensive quality assessment with confidence intervals
+- **User Guidance**: Automated recommendations for alignment quality improvement
+
+This future iteration plan addresses the current limitation in outlier rejection while providing a roadmap for advanced surface alignment capabilities suitable for production environments with challenging data quality conditions.
