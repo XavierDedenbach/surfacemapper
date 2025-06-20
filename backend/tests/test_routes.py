@@ -7,12 +7,14 @@ from unittest.mock import Mock, patch
 from app.main import app
 from app.models.data_models import ProcessingRequest, GeoreferenceParams, AnalysisBoundary
 
-client = TestClient(app)
+@pytest.fixture
+def client():
+    return TestClient(app)
 
 class TestSurfaceRoutes:
     """Test cases for surface-related API routes"""
     
-    def test_health_endpoint(self):
+    def test_health_endpoint(self, client):
         """Test health check endpoint"""
         response = client.get("/health")
         assert response.status_code == 200
@@ -20,7 +22,7 @@ class TestSurfaceRoutes:
         assert data["status"] == "healthy"
         assert data["service"] == "surface-mapper-backend"
     
-    def test_root_endpoint(self):
+    def test_root_endpoint(self, client):
         """Test root endpoint"""
         response = client.get("/")
         assert response.status_code == 200
@@ -29,7 +31,7 @@ class TestSurfaceRoutes:
         assert "version" in data
     
     @patch('app.routes.surfaces.upload_surface')
-    def test_upload_surface(self, mock_upload):
+    def test_upload_surface(self, mock_upload, client):
         """Test surface upload endpoint"""
         # Mock the upload response
         mock_upload.return_value = {
@@ -47,7 +49,7 @@ class TestSurfaceRoutes:
         assert data["message"] == "Surface uploaded successfully"
         assert data["filename"] == "test.ply"
     
-    def test_process_surfaces(self):
+    def test_process_surfaces(self, client):
         """Test surface processing endpoint"""
         # Create test request data
         request_data = {
@@ -84,7 +86,7 @@ class TestSurfaceRoutes:
         assert "status" in data
         assert "job_id" in data
     
-    def test_get_processing_status(self):
+    def test_get_processing_status(self, client):
         """Test processing status endpoint"""
         job_id = "test-job-123"
         response = client.get(f"/surfaces/status/{job_id}")
@@ -96,7 +98,7 @@ class TestSurfaceRoutes:
 class TestDataValidation:
     """Test cases for data validation"""
     
-    def test_invalid_georeference_params(self):
+    def test_invalid_georeference_params(self, client):
         """Test validation of georeferencing parameters"""
         request_data = {
             "surface_files": ["surface1.ply"],
@@ -122,7 +124,7 @@ class TestDataValidation:
         # Should return validation error
         assert response.status_code in [400, 422]
     
-    def test_invalid_boundary_coordinates(self):
+    def test_invalid_boundary_coordinates(self, client):
         """Test validation of boundary coordinates"""
         request_data = {
             "surface_files": ["surface1.ply"],

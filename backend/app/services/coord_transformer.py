@@ -30,7 +30,7 @@ class CoordinateTransformer:
         zone_number = int((longitude + 180) / 6) + 1
         return f"EPSG:326{zone_number:02d}" if longitude >= 0 else f"EPSG:327{zone_number:02d}"
     
-    async def transform_surface_coordinates(
+    def transform_surface_coordinates(
         self, 
         vertices: np.ndarray, 
         params: GeoreferenceParams
@@ -44,7 +44,7 @@ class CoordinateTransformer:
         # 3. Transform to UTM using pyproj
         return vertices
     
-    async def transform_boundary_coordinates(
+    def transform_boundary_coordinates(
         self, 
         wgs84_boundary: List[Tuple[float, float]]
     ) -> List[Tuple[float, float]]:
