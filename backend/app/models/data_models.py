@@ -113,4 +113,89 @@ class AnalysisResults(BaseModel):
     volume_results: List[VolumeResult]
     thickness_results: List[ThicknessResult]
     compaction_results: List[CompactionResult]
-    processing_metadata: dict = Field(..., description="Processing metadata and performance metrics") 
+    processing_metadata: dict = Field(..., description="Processing metadata and performance metrics")
+
+
+class CoordinateSystem(BaseModel):
+    """Coordinate system definition"""
+    name: str = Field(..., description="Name of the coordinate system")
+    epsg_code: int = Field(..., gt=0, description="EPSG code for the coordinate system")
+    description: str = Field(..., description="Description of the coordinate system")
+    units: str = Field(..., description="Units of the coordinate system")
+    bounds: Dict[str, float] = Field(..., description="Geographic bounds of the coordinate system")
+
+    @field_validator('bounds')
+    @classmethod
+    def validate_bounds(cls, v):
+        """Validate coordinate bounds are logical"""
+        required_keys = ['min_lat', 'max_lat', 'min_lon', 'max_lon']
+        for key in required_keys:
+            if key not in v:
+                raise ValueError(f"Missing required bound key: {key}")
+        
+        if v['min_lat'] >= v['max_lat']:
+            raise ValueError("min_lat must be less than max_lat")
+        if v['min_lon'] >= v['max_lon']:
+            raise ValueError("min_lon must be less than max_lon")
+        
+        return v
+
+
+class ProcessingParameters(BaseModel):
+    """Processing parameters for surface analysis"""
+    triangulation_method: str = Field(..., description="Triangulation method to use")
+    interpolation_method: str = Field(..., description="Interpolation method to use")
+    grid_resolution: float = Field(..., gt=0, description="Grid resolution in units")
+    smoothing_factor: float = Field(..., ge=0, le=1, description="Smoothing factor (0-1)")
+    outlier_threshold: float = Field(..., gt=0, description="Outlier detection threshold")
+    confidence_level: float = Field(..., gt=0, le=1, description="Confidence level (0-1)")
+    max_iterations: int = Field(..., gt=0, description="Maximum iterations for convergence")
+    convergence_tolerance: float = Field(..., gt=0, description="Convergence tolerance")
+
+    @field_validator('triangulation_method')
+    @classmethod
+    def validate_triangulation_method(cls, v):
+        """Validate triangulation method"""
+        valid_methods = ['delaunay', 'convex_hull', 'alpha_shape']
+        if v not in valid_methods:
+            raise ValueError(f"Triangulation method must be one of: {valid_methods}")
+        return v
+
+    @field_validator('interpolation_method')
+    @classmethod
+    def validate_interpolation_method(cls, v):
+        """Validate interpolation method"""
+        valid_methods = ['linear', 'cubic', 'nearest']
+        if v not in valid_methods:
+            raise ValueError(f"Interpolation method must be one of: {valid_methods}")
+        return v
+
+
+class SurfaceConfiguration(BaseModel):
+    """Complete surface configuration"""
+    coordinate_system: CoordinateSystem = Field(..., description="Coordinate system configuration")
+    processing_params: ProcessingParameters = Field(..., description="Processing parameters")
+    quality_thresholds: Dict[str, float] = Field(..., description="Quality control thresholds")
+    export_settings: Dict[str, Any] = Field(..., description="Export configuration")
+
+    @field_validator('quality_thresholds')
+    @classmethod
+    def validate_quality_thresholds(cls, v):
+        """Validate quality thresholds are non-negative"""
+        for key, value in v.items():
+            if value < 0:
+                raise ValueError(f"Quality threshold {key} must be greater than or equal to 0")
+        return v
+
+    @field_validator('export_settings')
+    @classmethod
+    def validate_export_settings(cls, v):
+        """Validate export settings"""
+        if 'format' not in v:
+            raise ValueError("Export settings must include 'format'")
+        
+        valid_formats = ['ply', 'obj', 'stl', 'xyz']
+        if v['format'] not in valid_formats:
+            raise ValueError(f"Export format must be one of: {valid_formats}")
+        
+        return v 

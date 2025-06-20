@@ -14,7 +14,10 @@ from app.models.data_models import (
     VolumeResult,
     ThicknessResult,
     CompactionResult,
-    AnalysisResults
+    AnalysisResults,
+    CoordinateSystem,
+    ProcessingParameters,
+    SurfaceConfiguration
 )
 
 
@@ -509,4 +512,258 @@ class TestAnalysisResults:
         assert len(results.volume_results) == 1
         assert len(results.thickness_results) == 1
         assert len(results.compaction_results) == 1
-        assert results.processing_metadata["processing_time_seconds"] == 120.5 
+        assert results.processing_metadata["processing_time_seconds"] == 120.5
+
+
+class TestCoordinateSystem:
+    """Test cases for CoordinateSystem model"""
+
+    def test_coordinate_system_validation(self):
+        """Test valid CoordinateSystem creation"""
+        coord_system = CoordinateSystem(
+            name="UTM Zone 10N",
+            epsg_code=26910,
+            description="UTM Zone 10N (NAD83)",
+            units="meters",
+            bounds={
+                "min_lat": 32.0,
+                "max_lat": 84.0,
+                "min_lon": -126.0,
+                "max_lon": -120.0
+            }
+        )
+        
+        assert coord_system.name == "UTM Zone 10N"
+        assert coord_system.epsg_code == 26910
+        assert coord_system.description == "UTM Zone 10N (NAD83)"
+        assert coord_system.units == "meters"
+        assert coord_system.bounds["min_lat"] == 32.0
+
+    def test_coordinate_system_invalid_epsg(self):
+        """Test invalid EPSG code"""
+        with pytest.raises(ValidationError) as exc_info:
+            CoordinateSystem(
+                name="Invalid System",
+                epsg_code=-1,  # Invalid EPSG code
+                description="Invalid coordinate system",
+                units="meters",
+                bounds={
+                    "min_lat": 0.0,
+                    "max_lat": 90.0,
+                    "min_lon": -180.0,
+                    "max_lon": 180.0
+                }
+            )
+        assert "Input should be greater than 0" in str(exc_info.value)
+
+    def test_coordinate_system_invalid_bounds(self):
+        """Test invalid coordinate bounds"""
+        with pytest.raises(ValidationError) as exc_info:
+            CoordinateSystem(
+                name="Invalid Bounds",
+                epsg_code=4326,
+                description="Invalid bounds system",
+                units="degrees",
+                bounds={
+                    "min_lat": 90.0,  # Invalid: min > max
+                    "max_lat": 0.0,
+                    "min_lon": -180.0,
+                    "max_lon": 180.0
+                }
+            )
+        assert "min_lat must be less than max_lat" in str(exc_info.value)
+
+
+class TestProcessingParameters:
+    """Test cases for ProcessingParameters model"""
+
+    def test_processing_parameters_validation(self):
+        """Test valid ProcessingParameters creation"""
+        params = ProcessingParameters(
+            triangulation_method="delaunay",
+            interpolation_method="linear",
+            grid_resolution=1.0,
+            smoothing_factor=0.1,
+            outlier_threshold=3.0,
+            confidence_level=0.95,
+            max_iterations=1000,
+            convergence_tolerance=1e-6
+        )
+        
+        assert params.triangulation_method == "delaunay"
+        assert params.interpolation_method == "linear"
+        assert params.grid_resolution == 1.0
+        assert params.smoothing_factor == 0.1
+        assert params.outlier_threshold == 3.0
+        assert params.confidence_level == 0.95
+        assert params.max_iterations == 1000
+        assert params.convergence_tolerance == 1e-6
+
+    def test_processing_parameters_invalid_methods(self):
+        """Test invalid processing methods"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProcessingParameters(
+                triangulation_method="invalid_method",
+                interpolation_method="linear",
+                grid_resolution=1.0,
+                smoothing_factor=0.1,
+                outlier_threshold=3.0,
+                confidence_level=0.95,
+                max_iterations=1000,
+                convergence_tolerance=1e-6
+            )
+        assert "Triangulation method must be one of" in str(exc_info.value)
+
+    def test_processing_parameters_invalid_values(self):
+        """Test invalid parameter values"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProcessingParameters(
+                triangulation_method="delaunay",
+                interpolation_method="linear",
+                grid_resolution=-1.0,  # Invalid: negative
+                smoothing_factor=0.1,
+                outlier_threshold=3.0,
+                confidence_level=0.95,
+                max_iterations=1000,
+                convergence_tolerance=1e-6
+            )
+        assert "Input should be greater than 0" in str(exc_info.value)
+
+    def test_processing_parameters_confidence_level_bounds(self):
+        """Test confidence level bounds"""
+        with pytest.raises(ValidationError) as exc_info:
+            ProcessingParameters(
+                triangulation_method="delaunay",
+                interpolation_method="linear",
+                grid_resolution=1.0,
+                smoothing_factor=0.1,
+                outlier_threshold=3.0,
+                confidence_level=1.5,  # Invalid: > 1.0
+                max_iterations=1000,
+                convergence_tolerance=1e-6
+            )
+        assert "Input should be less than or equal to 1" in str(exc_info.value)
+
+
+class TestSurfaceConfiguration:
+    """Test cases for SurfaceConfiguration model"""
+
+    def test_surface_configuration_validation(self):
+        """Test valid SurfaceConfiguration creation"""
+        config = SurfaceConfiguration(
+            coordinate_system=CoordinateSystem(
+                name="UTM Zone 10N",
+                epsg_code=26910,
+                description="UTM Zone 10N (NAD83)",
+                units="meters",
+                bounds={
+                    "min_lat": 32.0,
+                    "max_lat": 84.0,
+                    "min_lon": -126.0,
+                    "max_lon": -120.0
+                }
+            ),
+            processing_params=ProcessingParameters(
+                triangulation_method="delaunay",
+                interpolation_method="linear",
+                grid_resolution=1.0,
+                smoothing_factor=0.1,
+                outlier_threshold=3.0,
+                confidence_level=0.95,
+                max_iterations=1000,
+                convergence_tolerance=1e-6
+            ),
+            quality_thresholds={
+                "min_point_density": 10.0,
+                "max_gap_size": 5.0,
+                "surface_roughness_threshold": 0.5
+            },
+            export_settings={
+                "format": "ply",
+                "include_normals": True,
+                "compression": False
+            }
+        )
+        
+        assert config.coordinate_system.name == "UTM Zone 10N"
+        assert config.processing_params.triangulation_method == "delaunay"
+        assert config.quality_thresholds["min_point_density"] == 10.0
+        assert config.export_settings["format"] == "ply"
+
+    def test_surface_configuration_invalid_quality_thresholds(self):
+        """Test invalid quality thresholds"""
+        with pytest.raises(ValidationError) as exc_info:
+            SurfaceConfiguration(
+                coordinate_system=CoordinateSystem(
+                    name="UTM Zone 10N",
+                    epsg_code=26910,
+                    description="UTM Zone 10N (NAD83)",
+                    units="meters",
+                    bounds={
+                        "min_lat": 32.0,
+                        "max_lat": 84.0,
+                        "min_lon": -126.0,
+                        "max_lon": -120.0
+                    }
+                ),
+                processing_params=ProcessingParameters(
+                    triangulation_method="delaunay",
+                    interpolation_method="linear",
+                    grid_resolution=1.0,
+                    smoothing_factor=0.1,
+                    outlier_threshold=3.0,
+                    confidence_level=0.95,
+                    max_iterations=1000,
+                    convergence_tolerance=1e-6
+                ),
+                quality_thresholds={
+                    "min_point_density": -1.0,  # Invalid: negative
+                    "max_gap_size": 5.0,
+                    "surface_roughness_threshold": 0.5
+                },
+                export_settings={
+                    "format": "ply",
+                    "include_normals": True,
+                    "compression": False
+                }
+            )
+        assert "Quality threshold min_point_density must be greater than or equal to 0" in str(exc_info.value)
+
+    def test_surface_configuration_invalid_export_format(self):
+        """Test invalid export format"""
+        with pytest.raises(ValidationError) as exc_info:
+            SurfaceConfiguration(
+                coordinate_system=CoordinateSystem(
+                    name="UTM Zone 10N",
+                    epsg_code=26910,
+                    description="UTM Zone 10N (NAD83)",
+                    units="meters",
+                    bounds={
+                        "min_lat": 32.0,
+                        "max_lat": 84.0,
+                        "min_lon": -126.0,
+                        "max_lon": -120.0
+                    }
+                ),
+                processing_params=ProcessingParameters(
+                    triangulation_method="delaunay",
+                    interpolation_method="linear",
+                    grid_resolution=1.0,
+                    smoothing_factor=0.1,
+                    outlier_threshold=3.0,
+                    confidence_level=0.95,
+                    max_iterations=1000,
+                    convergence_tolerance=1e-6
+                ),
+                quality_thresholds={
+                    "min_point_density": 10.0,
+                    "max_gap_size": 5.0,
+                    "surface_roughness_threshold": 0.5
+                },
+                export_settings={
+                    "format": "invalid_format",  # Invalid format
+                    "include_normals": True,
+                    "compression": False
+                }
+            )
+        assert "Export format must be one of" in str(exc_info.value) 
