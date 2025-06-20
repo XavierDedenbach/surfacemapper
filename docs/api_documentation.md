@@ -7,7 +7,7 @@ The Surface Mapper API provides endpoints for surface data processing, volume ca
 ## Base URL
 
 ```
-http://localhost:8000
+http://localhost:8081
 ```
 
 ## Authentication
@@ -475,19 +475,19 @@ Currently, no rate limiting is implemented. However, large file uploads and proc
 
 ```bash
 # 1. Upload surface files
-curl -X POST -F "file=@surface1.ply" http://localhost:8000/surfaces/upload
-curl -X POST -F "file=@surface2.ply" http://localhost:8000/surfaces/upload
+curl -X POST -F "file=@surface1.ply" http://localhost:8081/surfaces/upload
+curl -X POST -F "file=@surface2.ply" http://localhost:8081/surfaces/upload
 
 # 2. Process surfaces
 curl -X POST -H "Content-Type: application/json" \
   -d @processing_request.json \
-  http://localhost:8000/surfaces/process
+  http://localhost:8081/surfaces/process
 
 # 3. Check status
-curl http://localhost:8000/surfaces/status/{job_id}
+curl http://localhost:8081/surfaces/status/{job_id}
 
 # 4. Export results
-curl http://localhost:8000/surfaces/export/{job_id}?format=csv
+curl http://localhost:8081/surfaces/export/{job_id}?format=csv
 ```
 
 ### Processing Request Example

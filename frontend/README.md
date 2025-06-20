@@ -36,10 +36,62 @@ src/
 
 ## Technology Stack
 
-- **React 18**: Modern React with hooks and functional components
+- **React 19.1.0**: Modern React with hooks and functional components
 - **Three.js**: 3D graphics and visualization
-- **Tailwind CSS**: Utility-first CSS framework
-- **Fetch API**: Modern HTTP client for API communication
+- **React Three Fiber**: React integration for Three.js
+- **React Three Drei**: Useful helpers for React Three Fiber
+- **Tailwind CSS 3.4.17**: Utility-first CSS framework with plugins
+- **Axios**: HTTP client for robust API communication
+- **PostCSS**: CSS processing with autoprefixer
+
+## Dependencies
+
+### Core Dependencies
+```json
+{
+  "react": "^19.1.0",
+  "react-dom": "^19.1.0",
+  "react-scripts": "5.0.1"
+}
+```
+
+### 3D Visualization
+```json
+{
+  "three": "^0.160.0",
+  "@react-three/fiber": "^8.15.0",
+  "@react-three/drei": "^9.99.0"
+}
+```
+
+### Styling
+```json
+{
+  "tailwindcss": "^3.4.17",
+  "@tailwindcss/forms": "^0.5.10",
+  "@tailwindcss/typography": "^0.5.10",
+  "@tailwindcss/aspect-ratio": "^0.4.2",
+  "autoprefixer": "^10.4.21",
+  "postcss": "^8.5.6"
+}
+```
+
+### API Communication
+```json
+{
+  "axios": "^1.6.0"
+}
+```
+
+### Development & Testing
+```json
+{
+  "@testing-library/react": "^16.3.0",
+  "@testing-library/jest-dom": "^6.6.3",
+  "@testing-library/user-event": "^13.5.0",
+  "web-vitals": "^2.1.4"
+}
+```
 
 ## Setup and Installation
 
@@ -60,7 +112,7 @@ npm install
 2. Configure environment variables:
 ```bash
 # Create .env file
-REACT_APP_API_BASE_URL=http://localhost:8000
+REACT_APP_API_BASE_URL=http://localhost:8081
 ```
 
 3. Start development server:
@@ -74,6 +126,43 @@ The application will be available at `http://localhost:3000`
 
 ```bash
 npm run build
+```
+
+The build process includes:
+- Tailwind CSS compilation with PostCSS
+- Three.js optimization
+- Code splitting and minification
+- Asset optimization
+
+## Configuration Files
+
+### Tailwind CSS Configuration
+```javascript
+// tailwind.config.js
+module.exports = {
+  content: ["./src/**/*.{js,jsx,ts,tsx}"],
+  theme: {
+    extend: {
+      // Custom theme extensions
+    },
+  },
+  plugins: [
+    require('@tailwindcss/forms'),
+    require('@tailwindcss/typography'),
+    require('@tailwindcss/aspect-ratio'),
+  ],
+}
+```
+
+### PostCSS Configuration
+```javascript
+// postcss.config.js
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
 ```
 
 ## Component Documentation
@@ -104,6 +193,7 @@ Renders 3D surface visualization using Three.js:
 - Color-coded surface representation
 - Point analysis on hover
 - Responsive canvas sizing
+- Raycasting for interactive point selection
 
 **Props:**
 - `surfaces`: Array of surface data
@@ -131,7 +221,7 @@ Displays analysis results in organized tables:
 
 ### Backend Communication
 
-The frontend communicates with the backend through the `backendApi.js` client:
+The frontend communicates with the backend through the `backendApi.js` client using Axios:
 
 ```javascript
 import { uploadSurface, processSurfaces, getProcessingStatus } from './api/backendApi';
@@ -146,14 +236,44 @@ const jobId = await processSurfaces(processingRequest);
 const status = await getProcessingStatus(jobId);
 ```
 
+### API Endpoints
+
+The frontend supports all backend endpoints:
+
+- **Surface Management**: Upload, validate, process surfaces
+- **Analysis**: Volume, thickness, compaction calculations
+- **3D Visualization**: Mesh data retrieval for Three.js
+- **Point Analysis**: Interactive point queries
+- **Export**: Results export in multiple formats
+- **Configuration**: Processing parameters and coordinate systems
+
 ### Error Handling
 
 The API client includes comprehensive error handling:
 
 - Network connectivity issues
-- HTTP error responses
-- Request timeouts
+- HTTP error responses (4xx, 5xx)
+- Request timeouts (30-second timeout)
 - Validation errors
+- File upload errors
+
+### Request/Response Interceptors
+
+```javascript
+// Request logging
+apiClient.interceptors.request.use((config) => {
+  console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
+  return config;
+});
+
+// Response error handling
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    // Comprehensive error processing
+  }
+);
+```
 
 ## State Management
 
@@ -187,97 +307,119 @@ The application uses Tailwind CSS for styling with custom components:
 ```css
 /* Custom button styles */
 .btn-primary {
-  @apply bg-blue-600 text-white hover:bg-blue-700;
+  @apply bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-md;
 }
 
 /* Custom form styles */
 .form-input {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-md;
+  @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500;
 }
 ```
 
 ### Responsive Design
 
-- Mobile-first approach
-- Breakpoint-specific layouts
-- Touch-friendly interactions
-- Print-optimized styles
+The interface is fully responsive with Tailwind's responsive utilities:
 
-## Development Guidelines
+```css
+/* Mobile-first responsive design */
+.container {
+  @apply px-4 sm:px-6 lg:px-8;
+}
 
-### Code Style
+.grid {
+  @apply grid-cols-1 md:grid-cols-2 lg:grid-cols-3;
+}
+```
 
-- Use functional components with hooks
-- Implement proper error boundaries
-- Follow React best practices
-- Use TypeScript for type safety (future)
+## Testing
 
-### Testing
+### Unit Tests
 
 ```bash
-# Run tests
 npm test
-
-# Run tests with coverage
-npm test -- --coverage
 ```
 
-### Performance
+Tests cover:
+- Component rendering
+- User interactions
+- API integration
+- State management
 
-- Lazy load components where appropriate
-- Optimize Three.js rendering
-- Implement proper cleanup in useEffect
-- Use React.memo for expensive components
-
-## Deployment
-
-### Docker
-
-The frontend is containerized using nginx:
-
-```dockerfile
-FROM nginx:alpine
-COPY build /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/nginx.conf
-```
-
-### Environment Configuration
-
-Configure environment variables for different deployments:
+### Build Testing
 
 ```bash
-# Development
-REACT_APP_API_BASE_URL=http://localhost:8000
-
-# Production
-REACT_APP_API_BASE_URL=https://api.surfacemapper.com
+npm run build
 ```
+
+Validates:
+- Tailwind CSS compilation
+- Three.js integration
+- Production optimization
+- Asset bundling
+
+## Performance
+
+### Optimization Features
+
+- **Code Splitting**: Automatic code splitting by React
+- **Lazy Loading**: Components loaded on demand
+- **Asset Optimization**: Images and static assets optimized
+- **Bundle Analysis**: Webpack bundle analyzer available
+
+### 3D Performance
+
+- **Level of Detail**: Configurable mesh detail levels
+- **Frustum Culling**: Only render visible objects
+- **Geometry Instancing**: Efficient rendering of repeated geometries
+- **Memory Management**: Proper disposal of Three.js resources
+
+## Browser Support
+
+- **Chrome**: 90+
+- **Firefox**: 88+
+- **Safari**: 14+
+- **Edge**: 90+
+
+## Development Workflow
+
+1. **Feature Development**: Create feature branches
+2. **Testing**: Write tests for new features
+3. **Code Review**: Submit pull requests
+4. **Integration**: Merge to main branch
+5. **Deployment**: Build and deploy to production
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **CORS Errors**: Ensure backend CORS configuration
-2. **Three.js Performance**: Reduce surface complexity for large datasets
-3. **Memory Leaks**: Properly dispose Three.js resources
-4. **API Timeouts**: Increase timeout values for large file uploads
+1. **Build Failures**: Ensure all Tailwind plugins are installed
+2. **API Errors**: Check backend server status and CORS configuration
+3. **3D Performance**: Reduce mesh complexity for large datasets
+4. **Memory Issues**: Monitor Three.js resource disposal
 
 ### Debug Mode
 
-Enable debug logging:
-
-```javascript
-localStorage.setItem('debug', 'surfacemapper:*');
+```bash
+# Enable debug logging
+REACT_APP_DEBUG=true npm start
 ```
 
 ## Contributing
 
-1. Follow the established code style
-2. Add tests for new features
+1. Follow the existing code style
+2. Write tests for new features
 3. Update documentation
-4. Ensure responsive design
-5. Test with various screen sizes
+4. Ensure all tests pass
+5. Submit pull requests
 
 ## License
 
-See project LICENSE file for details.
+See the main project LICENSE file.
+
+## Environment Variables
+
+Create a `.env` file in the frontend directory with the following variables:
+
+```env
+REACT_APP_API_BASE_URL=http://localhost:8081
+```

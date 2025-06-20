@@ -58,7 +58,7 @@ Key dependencies include:
 
 2. Run the development server:
    ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8081
    ```
 
 3. Run tests:
@@ -110,4 +110,12 @@ Key dependencies include:
 - Structured logging for all operations
 - Performance metrics tracking
 - Error logging with context
-- Processing logs for algorithm validation 
+- Processing logs for algorithm validation
+
+## Running the Application
+
+### Development Mode
+```bash
+cd backend
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8081
+``` 
