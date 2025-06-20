@@ -4,7 +4,7 @@ import React, { useState } from 'react';
  * InputForms component for surface upload and georeferencing
  * Handles the wizard-based workflow for surface data input
  */
-const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, onTonnageSubmit }) => {
+const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, onTonnageSubmit, onComplete }) => {
   const [currentStep, setCurrentStep] = useState(1);
   const [surfaceFiles, setSurfaceFiles] = useState([]);
   const [georeferenceParams, setGeoreferenceParams] = useState([]);
@@ -237,8 +237,11 @@ const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, o
             analysisBoundary,
             tonnageInputs: tonnageInputs.filter(t => t && t.tonnage > 0)
           };
-          // TODO: Call processing function
-          console.log('Processing data:', processingData);
+          
+          // Call the onComplete callback with the processing data
+          if (onComplete) {
+            onComplete(processingData);
+          }
         }}>
           Start Analysis
         </button>
