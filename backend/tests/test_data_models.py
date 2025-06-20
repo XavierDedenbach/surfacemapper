@@ -17,7 +17,10 @@ from app.models.data_models import (
     AnalysisResults,
     CoordinateSystem,
     ProcessingParameters,
-    SurfaceConfiguration
+    SurfaceConfiguration,
+    StatisticalAnalysis,
+    QualityMetrics,
+    DetailedAnalysisReport
 )
 
 
@@ -766,4 +769,301 @@ class TestSurfaceConfiguration:
                     "compression": False
                 }
             )
-        assert "Export format must be one of" in str(exc_info.value) 
+        assert "Export format must be one of" in str(exc_info.value)
+
+
+class TestStatisticalAnalysis:
+    """Test cases for StatisticalAnalysis model"""
+
+    def test_statistical_analysis_validation(self):
+        """Test valid StatisticalAnalysis creation"""
+        stats = StatisticalAnalysis(
+            mean_value=25.5,
+            median_value=24.8,
+            standard_deviation=3.2,
+            variance=10.24,
+            skewness=0.15,
+            kurtosis=2.8,
+            sample_count=1500,
+            confidence_interval_95=(22.3, 28.7),
+            percentiles={
+                "p10": 20.1,
+                "p25": 22.5,
+                "p75": 28.2,
+                "p90": 30.8
+            }
+        )
+        
+        assert stats.mean_value == 25.5
+        assert stats.median_value == 24.8
+        assert stats.standard_deviation == 3.2
+        assert stats.variance == 10.24
+        assert stats.skewness == 0.15
+        assert stats.kurtosis == 2.8
+        assert stats.sample_count == 1500
+        assert stats.confidence_interval_95 == (22.3, 28.7)
+        assert stats.percentiles["p10"] == 20.1
+
+    def test_statistical_analysis_invalid_confidence_interval(self):
+        """Test invalid confidence interval"""
+        with pytest.raises(ValidationError) as exc_info:
+            StatisticalAnalysis(
+                mean_value=25.5,
+                median_value=24.8,
+                standard_deviation=3.2,
+                variance=10.24,
+                skewness=0.15,
+                kurtosis=2.8,
+                sample_count=1500,
+                confidence_interval_95=(28.7, 22.3),  # Invalid: lower > upper
+                percentiles={
+                    "p10": 20.1,
+                    "p25": 22.5,
+                    "p75": 28.2,
+                    "p90": 30.8
+                }
+            )
+        assert "Confidence interval lower bound must be less than upper bound" in str(exc_info.value)
+
+    def test_statistical_analysis_invalid_sample_count(self):
+        """Test invalid sample count"""
+        with pytest.raises(ValidationError) as exc_info:
+            StatisticalAnalysis(
+                mean_value=25.5,
+                median_value=24.8,
+                standard_deviation=3.2,
+                variance=10.24,
+                skewness=0.15,
+                kurtosis=2.8,
+                sample_count=0,  # Invalid: zero
+                confidence_interval_95=(22.3, 28.7),
+                percentiles={
+                    "p10": 20.1,
+                    "p25": 22.5,
+                    "p75": 28.2,
+                    "p90": 30.8
+                }
+            )
+        assert "Input should be greater than 0" in str(exc_info.value)
+
+
+class TestQualityMetrics:
+    """Test cases for QualityMetrics model"""
+
+    def test_quality_metrics_validation(self):
+        """Test valid QualityMetrics creation"""
+        metrics = QualityMetrics(
+            point_density=125.5,
+            surface_coverage=0.95,
+            data_completeness=0.98,
+            noise_level=0.02,
+            accuracy_estimate=0.15,
+            precision_estimate=0.08,
+            reliability_score=0.92,
+            quality_flags={
+                "high_density": True,
+                "good_coverage": True,
+                "low_noise": True,
+                "acceptable_accuracy": True
+            }
+        )
+        
+        assert metrics.point_density == 125.5
+        assert metrics.surface_coverage == 0.95
+        assert metrics.data_completeness == 0.98
+        assert metrics.noise_level == 0.02
+        assert metrics.accuracy_estimate == 0.15
+        assert metrics.precision_estimate == 0.08
+        assert metrics.reliability_score == 0.92
+        assert metrics.quality_flags["high_density"] is True
+
+    def test_quality_metrics_invalid_coverage(self):
+        """Test invalid surface coverage"""
+        with pytest.raises(ValidationError) as exc_info:
+            QualityMetrics(
+                point_density=125.5,
+                surface_coverage=1.5,  # Invalid: > 1.0
+                data_completeness=0.98,
+                noise_level=0.02,
+                accuracy_estimate=0.15,
+                precision_estimate=0.08,
+                reliability_score=0.92,
+                quality_flags={
+                    "high_density": True,
+                    "good_coverage": True,
+                    "low_noise": True,
+                    "acceptable_accuracy": True
+                }
+            )
+        assert "Input should be less than or equal to 1" in str(exc_info.value)
+
+    def test_quality_metrics_invalid_noise_level(self):
+        """Test invalid noise level"""
+        with pytest.raises(ValidationError) as exc_info:
+            QualityMetrics(
+                point_density=125.5,
+                surface_coverage=0.95,
+                data_completeness=0.98,
+                noise_level=-0.1,  # Invalid: negative
+                accuracy_estimate=0.15,
+                precision_estimate=0.08,
+                reliability_score=0.92,
+                quality_flags={
+                    "high_density": True,
+                    "good_coverage": True,
+                    "low_noise": True,
+                    "acceptable_accuracy": True
+                }
+            )
+        assert "Input should be greater than or equal to 0" in str(exc_info.value)
+
+
+class TestDetailedAnalysisReport:
+    """Test cases for DetailedAnalysisReport model"""
+
+    def test_detailed_analysis_report_validation(self):
+        """Test valid DetailedAnalysisReport creation"""
+        report = DetailedAnalysisReport(
+            analysis_id="analysis_20241219_001",
+            timestamp="2024-12-19T10:30:00Z",
+            processing_duration_seconds=245.7,
+            input_surfaces_count=2,
+            analysis_boundary_area_sq_meters=15000.0,
+            statistical_analysis=StatisticalAnalysis(
+                mean_value=25.5,
+                median_value=24.8,
+                standard_deviation=3.2,
+                variance=10.24,
+                skewness=0.15,
+                kurtosis=2.8,
+                sample_count=1500,
+                confidence_interval_95=(22.3, 28.7),
+                percentiles={
+                    "p10": 20.1,
+                    "p25": 22.5,
+                    "p75": 28.2,
+                    "p90": 30.8
+                }
+            ),
+            quality_metrics=QualityMetrics(
+                point_density=125.5,
+                surface_coverage=0.95,
+                data_completeness=0.98,
+                noise_level=0.02,
+                accuracy_estimate=0.15,
+                precision_estimate=0.08,
+                reliability_score=0.92,
+                quality_flags={
+                    "high_density": True,
+                    "good_coverage": True,
+                    "low_noise": True,
+                    "acceptable_accuracy": True
+                }
+            ),
+            warnings=[
+                "Gap detected in northwest corner",
+                "Low point density in southern region"
+            ],
+            recommendations=[
+                "Consider additional survey points in low-density areas",
+                "Verify coordinate system accuracy"
+            ]
+        )
+        
+        assert report.analysis_id == "analysis_20241219_001"
+        assert report.timestamp == "2024-12-19T10:30:00Z"
+        assert report.processing_duration_seconds == 245.7
+        assert report.input_surfaces_count == 2
+        assert report.analysis_boundary_area_sq_meters == 15000.0
+        assert len(report.warnings) == 2
+        assert len(report.recommendations) == 2
+
+    def test_detailed_analysis_report_invalid_duration(self):
+        """Test invalid processing duration"""
+        with pytest.raises(ValidationError) as exc_info:
+            DetailedAnalysisReport(
+                analysis_id="analysis_20241219_001",
+                timestamp="2024-12-19T10:30:00Z",
+                processing_duration_seconds=-10.0,  # Invalid: negative
+                input_surfaces_count=2,
+                analysis_boundary_area_sq_meters=15000.0,
+                statistical_analysis=StatisticalAnalysis(
+                    mean_value=25.5,
+                    median_value=24.8,
+                    standard_deviation=3.2,
+                    variance=10.24,
+                    skewness=0.15,
+                    kurtosis=2.8,
+                    sample_count=1500,
+                    confidence_interval_95=(22.3, 28.7),
+                    percentiles={
+                        "p10": 20.1,
+                        "p25": 22.5,
+                        "p75": 28.2,
+                        "p90": 30.8
+                    }
+                ),
+                quality_metrics=QualityMetrics(
+                    point_density=125.5,
+                    surface_coverage=0.95,
+                    data_completeness=0.98,
+                    noise_level=0.02,
+                    accuracy_estimate=0.15,
+                    precision_estimate=0.08,
+                    reliability_score=0.92,
+                    quality_flags={
+                        "high_density": True,
+                        "good_coverage": True,
+                        "low_noise": True,
+                        "acceptable_accuracy": True
+                    }
+                ),
+                warnings=[],
+                recommendations=[]
+            )
+        assert "Input should be greater than or equal to 0" in str(exc_info.value)
+
+    def test_detailed_analysis_report_invalid_surface_count(self):
+        """Test invalid surface count"""
+        with pytest.raises(ValidationError) as exc_info:
+            DetailedAnalysisReport(
+                analysis_id="analysis_20241219_001",
+                timestamp="2024-12-19T10:30:00Z",
+                processing_duration_seconds=245.7,
+                input_surfaces_count=0,  # Invalid: zero
+                analysis_boundary_area_sq_meters=15000.0,
+                statistical_analysis=StatisticalAnalysis(
+                    mean_value=25.5,
+                    median_value=24.8,
+                    standard_deviation=3.2,
+                    variance=10.24,
+                    skewness=0.15,
+                    kurtosis=2.8,
+                    sample_count=1500,
+                    confidence_interval_95=(22.3, 28.7),
+                    percentiles={
+                        "p10": 20.1,
+                        "p25": 22.5,
+                        "p75": 28.2,
+                        "p90": 30.8
+                    }
+                ),
+                quality_metrics=QualityMetrics(
+                    point_density=125.5,
+                    surface_coverage=0.95,
+                    data_completeness=0.98,
+                    noise_level=0.02,
+                    accuracy_estimate=0.15,
+                    precision_estimate=0.08,
+                    reliability_score=0.92,
+                    quality_flags={
+                        "high_density": True,
+                        "good_coverage": True,
+                        "low_noise": True,
+                        "acceptable_accuracy": True
+                    }
+                ),
+                warnings=[],
+                recommendations=[]
+            )
+        assert "Input should be greater than 0" in str(exc_info.value) 

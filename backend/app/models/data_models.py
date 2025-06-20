@@ -198,4 +198,52 @@ class SurfaceConfiguration(BaseModel):
         if v['format'] not in valid_formats:
             raise ValueError(f"Export format must be one of: {valid_formats}")
         
-        return v 
+        return v
+
+
+class StatisticalAnalysis(BaseModel):
+    """Statistical analysis results"""
+    mean_value: float = Field(..., description="Mean value")
+    median_value: float = Field(..., description="Median value")
+    standard_deviation: float = Field(..., ge=0, description="Standard deviation")
+    variance: float = Field(..., ge=0, description="Variance")
+    skewness: float = Field(..., description="Skewness")
+    kurtosis: float = Field(..., description="Kurtosis")
+    sample_count: int = Field(..., gt=0, description="Number of samples")
+    confidence_interval_95: Tuple[float, float] = Field(..., description="95% confidence interval")
+    percentiles: Dict[str, float] = Field(..., description="Percentile values")
+
+    @field_validator('confidence_interval_95')
+    @classmethod
+    def validate_confidence_interval(cls, v):
+        """Validate confidence interval has exactly 2 values and lower < upper"""
+        if len(v) != 2:
+            raise ValueError("Confidence interval must have exactly 2 values")
+        if v[0] >= v[1]:
+            raise ValueError("Confidence interval lower bound must be less than upper bound")
+        return v
+
+
+class QualityMetrics(BaseModel):
+    """Quality metrics for analysis results"""
+    point_density: float = Field(..., ge=0, description="Point density per unit area")
+    surface_coverage: float = Field(..., ge=0, le=1, description="Surface coverage ratio (0-1)")
+    data_completeness: float = Field(..., ge=0, le=1, description="Data completeness ratio (0-1)")
+    noise_level: float = Field(..., ge=0, description="Noise level estimate")
+    accuracy_estimate: float = Field(..., ge=0, description="Accuracy estimate")
+    precision_estimate: float = Field(..., ge=0, description="Precision estimate")
+    reliability_score: float = Field(..., ge=0, le=1, description="Reliability score (0-1)")
+    quality_flags: Dict[str, bool] = Field(..., description="Quality assessment flags")
+
+
+class DetailedAnalysisReport(BaseModel):
+    """Detailed analysis report with comprehensive results"""
+    analysis_id: str = Field(..., description="Unique analysis identifier")
+    timestamp: str = Field(..., description="Analysis timestamp")
+    processing_duration_seconds: float = Field(..., ge=0, description="Processing duration in seconds")
+    input_surfaces_count: int = Field(..., gt=0, description="Number of input surfaces")
+    analysis_boundary_area_sq_meters: float = Field(..., ge=0, description="Analysis boundary area")
+    statistical_analysis: StatisticalAnalysis = Field(..., description="Statistical analysis results")
+    quality_metrics: QualityMetrics = Field(..., description="Quality metrics")
+    warnings: List[str] = Field(default_factory=list, description="Analysis warnings")
+    recommendations: List[str] = Field(default_factory=list, description="Analysis recommendations") 
