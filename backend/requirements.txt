@@ -4,21 +4,21 @@ uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 
 # Data processing and scientific computing
-numpy>=1.26.0
-scipy>=1.11.0
+numpy==1.24.3
+scipy==1.11.4
 pandas>=2.1.0
 
 # 3D geometry and mesh processing
 # Note: PyVista provides advanced 3D mesh processing with VTK backend
 # Includes 3D Delaunay triangulation, volume calculation, and mesh operations
-pyvista>=0.45.0
-plyfile>=0.7.4
+pyvista==0.43.1
+plyfile==0.7.4
 
 # Geospatial and coordinate transformation
-pyproj>=3.6.0
+pyproj==3.6.1
 
 # Data validation and serialization
-pydantic>=2.5.0
+pydantic==2.5.0
 pydantic-settings>=2.1.0
 
 # File handling and I/O
@@ -47,4 +47,7 @@ python-dotenv>=1.0.0
 # Additional dependencies for 3D processing
 # These will be used as alternatives to Open3D
 matplotlib>=3.7.0  # For 3D plotting and visualization
-plotly>=5.17.0     # For interactive 3D visualization 
+plotly>=5.17.0     # For interactive 3D visualization
+
+# Added psutil for memory monitoring in tests
+psutil==5.9.6 

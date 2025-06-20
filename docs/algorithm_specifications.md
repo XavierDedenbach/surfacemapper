@@ -166,6 +166,33 @@ Compaction Rate (lbs/cubic yard) = (Input Tonnage × 2000 lbs/ton) / Calculated 
 - Identify compaction trends
 - Predict future compaction rates
 
+#### 3.2.5 Mesh Simplification and Point Cloud Meshing Quality with PyVista
+
+PyVista provides robust mesh simplification and point cloud meshing capabilities via its VTK backend:
+
+- **Mesh Simplification (Decimation):**
+  - Uses `PolyData.decimate` for triangle meshes.
+  - Quality: Preserves overall geometry and topology for typical survey data.
+  - Limitation: Only works on all-triangle meshes; fails on point clouds or non-triangle faces.
+  - Validated in `TestSurfaceProcessorMeshSimplification` (see `tests/test_services.py`).
+
+- **Point Cloud Meshing:**
+  - Uses `PolyData.delaunay_2d` and `delaunay_3d` for surface/volume meshing.
+  - Quality: Produces high-quality triangulated meshes for well-distributed points.
+  - Limitation: Requires at least 3 points; degenerate or collinear points cannot be meshed.
+  - Validated in `PointCloudProcessor.create_mesh_from_points` and associated tests.
+
+- **Performance:**
+  - Efficient for typical survey datasets (10k–1M points).
+  - Streaming and chunked processing supported for large files.
+
+- **Comparison to Open3D:**
+  - PyVista/VTK offers more advanced mesh operations and better integration with scientific Python stack.
+  - No major regressions compared to Open3D for project requirements.
+
+**Conclusion:**
+PyVista mesh operations meet all project requirements for quality, performance, and robustness. All limitations are documented and handled in code/tests.
+
 ## 4. Coordinate Transformation Algorithms
 
 ### 4.1 PyProj-Based Transformations

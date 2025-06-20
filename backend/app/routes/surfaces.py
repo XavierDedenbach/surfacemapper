@@ -1,10 +1,13 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, Query
 from typing import List, Optional
 import logging
+import os
+import uuid
 from app.models.data_models import (
     SurfaceUploadResponse, ProcessingRequest, ProcessingResponse,
-    AnalysisResults, VolumeResult, ThicknessResult, CompactionResult
+    AnalysisResults, VolumeResult, ThicknessResult, CompactionResult, ProcessingStatus
 )
+from app.utils.file_validator import validate_file_extension, validate_file_size, validate_ply_format
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/surfaces", tags=["surfaces"])
@@ -15,16 +18,50 @@ async def upload_surface(file: UploadFile = File(...)):
     Upload a .ply surface file for processing
     """
     logger.info(f"Uploading surface file: {file.filename}")
-    
-    # Validate file type
-    if not file.filename.lower().endswith('.ply'):
-        raise HTTPException(status_code=400, detail="Only .ply files are supported")
-    
-    # TODO: Implement PLY file validation and storage
+
+    # Validate file extension
+    if not validate_file_extension(file.filename):
+        raise HTTPException(status_code=400, detail="Invalid file type: only .ply files are supported and must not be named '.ply' only.")
+
+    # Save to temp file to check size and content
+    temp_dir = "/tmp/surfacemapper_uploads"
+    os.makedirs(temp_dir, exist_ok=True)
+    file_id = str(uuid.uuid4())
+    temp_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    size_bytes = 0
+    try:
+        with open(temp_path, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+                size_bytes += len(chunk)
+    except Exception as e:
+        logger.error(f"Failed to save uploaded file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
+
+    # Validate file size
+    if not validate_file_size(size_bytes):
+        os.remove(temp_path)
+        raise HTTPException(status_code=400, detail="File is empty or exceeds 2GB size limit.")
+
+    # Validate PLY format
+    try:
+        with open(temp_path, "rb") as f:
+            if not validate_ply_format(f):
+                os.remove(temp_path)
+                raise HTTPException(status_code=400, detail="Invalid PLY file format.")
+    except Exception as e:
+        logger.error(f"Failed to validate PLY file: {e}")
+        os.remove(temp_path)
+        raise HTTPException(status_code=400, detail="Invalid or corrupted PLY file.")
+
+    # Success
     return SurfaceUploadResponse(
         message="Surface uploaded successfully",
         filename=file.filename,
-        status="pending"
+        status=ProcessingStatus.PENDING
     )
 
 @router.post("/validate")
