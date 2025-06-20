@@ -195,3 +195,133 @@ class CoordinateTransformer:
         """
         # TODO: Implement accuracy validation
         return True 
+    
+    def get_rotation_matrix_z(self, angle_degrees: float) -> np.ndarray:
+        """
+        Get 3D rotation matrix around Z-axis
+        
+        Args:
+            angle_degrees: Rotation angle in degrees (clockwise from North as per business requirements)
+            
+        Returns:
+            3x3 rotation matrix as numpy array
+        """
+        # Validate input
+        if not isinstance(angle_degrees, (int, float)) or np.isnan(angle_degrees) or np.isinf(angle_degrees):
+            raise ValueError("Angle must be a finite number")
+        
+        # Convert degrees to radians
+        # Note: Business requirement specifies "clockwise from North"
+        # For standard mathematical rotation matrices, we use counterclockwise
+        # So we negate the angle to convert from clockwise to counterclockwise
+        angle_rad = np.radians(-angle_degrees)
+        
+        # Create rotation matrix around Z-axis
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+        
+        rotation_matrix = np.array([
+            [cos_a, -sin_a, 0],
+            [sin_a,  cos_a, 0],
+            [0,      0,    1]
+        ])
+        
+        return rotation_matrix
+    
+    def get_scaling_matrix(self, scale_factor: float) -> np.ndarray:
+        """
+        Get 3D uniform scaling matrix
+        
+        Args:
+            scale_factor: Uniform scaling factor (must be positive)
+            
+        Returns:
+            3x3 scaling matrix as numpy array
+        """
+        # Validate input
+        if not isinstance(scale_factor, (int, float)) or np.isnan(scale_factor) or np.isinf(scale_factor):
+            raise ValueError("Scale factor must be a finite number")
+        
+        if scale_factor < 0:
+            raise ValueError("Scale factor must be non-negative")
+        
+        # Create uniform scaling matrix
+        scaling_matrix = np.array([
+            [scale_factor, 0, 0],
+            [0, scale_factor, 0],
+            [0, 0, scale_factor]
+        ])
+        
+        return scaling_matrix
+    
+    def apply_rotation_z(self, points: np.ndarray, angle_degrees: float) -> np.ndarray:
+        """
+        Apply 3D rotation around Z-axis to points
+        
+        Args:
+            points: Nx3 numpy array of 3D points
+            angle_degrees: Rotation angle in degrees (positive = counterclockwise)
+            
+        Returns:
+            Nx3 numpy array of rotated points
+        """
+        # Validate inputs
+        if points is None:
+            raise ValueError("Points array cannot be None")
+        
+        if not isinstance(points, np.ndarray):
+            raise ValueError("Points must be a numpy array")
+        
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("Points must be a 2D array with 3 columns (Nx3)")
+        
+        if not isinstance(angle_degrees, (int, float)) or np.isnan(angle_degrees) or np.isinf(angle_degrees):
+            raise ValueError("Angle must be a finite number")
+        
+        # Handle empty array
+        if points.shape[0] == 0:
+            return points.copy()
+        
+        # Get rotation matrix
+        rotation_matrix = self.get_rotation_matrix_z(angle_degrees)
+        
+        # Apply rotation: points @ rotation_matrix.T
+        rotated_points = np.dot(points, rotation_matrix.T)
+        
+        return rotated_points
+    
+    def apply_scaling(self, points: np.ndarray, scale_factor: float) -> np.ndarray:
+        """
+        Apply uniform scaling to points
+        
+        Args:
+            points: Nx3 numpy array of 3D points
+            scale_factor: Uniform scaling factor (must be positive)
+            
+        Returns:
+            Nx3 numpy array of scaled points
+        """
+        # Validate inputs
+        if points is None:
+            raise ValueError("Points array cannot be None")
+        
+        if not isinstance(points, np.ndarray):
+            raise ValueError("Points must be a numpy array")
+        
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("Points must be a 2D array with 3 columns (Nx3)")
+        
+        if not isinstance(scale_factor, (int, float)) or np.isnan(scale_factor) or np.isinf(scale_factor):
+            raise ValueError("Scale factor must be a finite number")
+        
+        if scale_factor < 0:
+            raise ValueError("Scale factor must be non-negative")
+        
+        # Handle empty array
+        if points.shape[0] == 0:
+            return points.copy()
+        
+        # Apply scaling: points * scale_factor
+        scaled_points = points * scale_factor
+        
+        return scaled_points 

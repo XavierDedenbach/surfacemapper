@@ -142,18 +142,18 @@ class TestCoordinateTransformer:
     def test_determine_utm_zone(self, coord_transformer):
         """Test UTM zone determination"""
         # Test positive longitude (Northern Hemisphere)
-        zone = coord_transformer.determine_utm_zone(120.0)
+        zone = coord_transformer.determine_utm_zone_with_hemisphere(40.0, 120.0)
         assert zone.startswith("EPSG:326")
         
         # Test negative longitude (Southern Hemisphere)
-        zone = coord_transformer.determine_utm_zone(-120.0)
+        zone = coord_transformer.determine_utm_zone_with_hemisphere(-40.0, -120.0)
         assert zone.startswith("EPSG:327")
         
         # Test edge cases
-        zone = coord_transformer.determine_utm_zone(0.0)
+        zone = coord_transformer.determine_utm_zone_with_hemisphere(40.0, 0.0)
         assert zone.startswith("EPSG:326")
         
-        zone = coord_transformer.determine_utm_zone(180.0)
+        zone = coord_transformer.determine_utm_zone_with_hemisphere(40.0, 180.0)
         assert zone.startswith("EPSG:326")
     
     def test_transform_surface_coordinates(self, coord_transformer):
