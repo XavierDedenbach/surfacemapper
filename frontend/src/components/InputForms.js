@@ -1,10 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
  * InputForms component for surface upload and georeferencing
  * Handles the wizard-based workflow for surface data input
  */
-const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, onTonnageSubmit, onComplete }) => {
+const InputForms = ({ 
+  onSurfaceUpload, 
+  onGeoreferenceSubmit, 
+  onBoundarySubmit, 
+  onTonnageSubmit, 
+  onComplete 
+}) => {
+  // Validate props
+  const callbacks = {
+    onSurfaceUpload: onSurfaceUpload || (() => {}),
+    onGeoreferenceSubmit: onGeoreferenceSubmit || (() => {}),
+    onBoundarySubmit: onBoundarySubmit || (() => {}),
+    onTonnageSubmit: onTonnageSubmit || (() => {}),
+    onComplete: onComplete || (() => {})
+  };
+
   const [currentStep, setCurrentStep] = useState(1);
   const [surfaceFiles, setSurfaceFiles] = useState([]);
   const [georeferenceParams, setGeoreferenceParams] = useState([]);
@@ -18,11 +33,30 @@ const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, o
   });
   const [tonnageInputs, setTonnageInputs] = useState([]);
 
-  const handleFileUpload = (event) => {
-    const files = Array.from(event.target.files);
-    setSurfaceFiles(files);
+  // Validate step boundaries
+  const nextStep = () => {
+    if (currentStep < 5) {
+      setCurrentStep(Math.min(currentStep + 1, 5));
+    }
   };
 
+  const prevStep = () => {
+    if (currentStep > 1) {
+      setCurrentStep(Math.max(currentStep - 1, 1));
+    }
+  };
+
+  // Handle file upload with validation
+  const handleFileUpload = (event) => {
+    const files = Array.from(event.target.files || []);
+    // Validate file types
+    const validFiles = files.filter(file => 
+      file && file.name && file.name.toLowerCase().endsWith('.ply')
+    );
+    setSurfaceFiles(validFiles);
+  };
+
+  // Handle georeference changes with validation
   const handleGeoreferenceChange = (index, field, value) => {
     const updatedParams = [...georeferenceParams];
     if (!updatedParams[index]) {
@@ -37,28 +71,28 @@ const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, o
     setGeoreferenceParams(updatedParams);
   };
 
+  // Handle boundary changes with validation
   const handleBoundaryChange = (index, field, value) => {
     const updatedBoundary = { ...analysisBoundary };
-    updatedBoundary.coordinates[index][field] = value;
-    setAnalysisBoundary(updatedBoundary);
+    if (updatedBoundary.coordinates[index]) {
+      updatedBoundary.coordinates[index][field] = value;
+      setAnalysisBoundary(updatedBoundary);
+    }
   };
 
+  // Handle tonnage changes with validation
   const handleTonnageChange = (index, value) => {
     const updatedTonnage = [...tonnageInputs];
-    updatedTonnage[index] = { layer_index: index, tonnage: parseFloat(value) || 0 };
+    const tonnageValue = parseFloat(value) || 0;
+    updatedTonnage[index] = { layer_index: index, tonnage: tonnageValue };
     setTonnageInputs(updatedTonnage);
   };
 
-  const nextStep = () => {
-    if (currentStep < 5) {
-      setCurrentStep(currentStep + 1);
-    }
-  };
-
-  const prevStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(currentStep - 1);
-    }
+  // Validate surface count change
+  const handleSurfaceCountChange = (count) => {
+    const validCount = Math.max(1, Math.min(4, parseInt(count) || 1));
+    setSurfaceFiles(new Array(validCount).fill(null));
+    setGeoreferenceParams(new Array(validCount).fill({}));
   };
 
   const renderStep1 = () => (
@@ -68,11 +102,7 @@ const InputForms = ({ onSurfaceUpload, onGeoreferenceSubmit, onBoundarySubmit, o
         <label>Number of Surfaces:</label>
         <select 
           value={surfaceFiles.length} 
-          onChange={(e) => {
-            const count = parseInt(e.target.value);
-            setSurfaceFiles(new Array(count).fill(null));
-            setGeoreferenceParams(new Array(count).fill({}));
-          }}
+          onChange={(e) => handleSurfaceCountChange(e.target.value)}
         >
           <option value={1}>1 Surface</option>
           <option value={2}>2 Surfaces</option>

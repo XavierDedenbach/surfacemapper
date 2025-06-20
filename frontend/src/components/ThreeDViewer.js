@@ -6,7 +6,27 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
  * ThreeDViewer component for 3D surface visualization using Three.js
  * Renders surfaces stacked vertically according to their Z-coordinates
  */
-const ThreeDViewer = ({ surfaces, analysisBoundary, onPointHover, selectedSurfaces }) => {
+const ThreeDViewer = ({ 
+  surfaces, 
+  analysisBoundary, 
+  onPointHover, 
+  selectedSurfaces,
+  onPointSelect,
+  onSurfaceToggle 
+}) => {
+  // Validate props
+  const data = {
+    surfaces: Array.isArray(surfaces) ? surfaces : [],
+    analysisBoundary: analysisBoundary || null,
+    selectedSurfaces: Array.isArray(selectedSurfaces) ? selectedSurfaces : []
+  };
+
+  const callbacks = {
+    onPointHover: onPointHover || (() => {}),
+    onPointSelect: onPointSelect || (() => {}),
+    onSurfaceToggle: onSurfaceToggle || (() => {})
+  };
+
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
   const rendererRef = useRef(null);
@@ -15,73 +35,108 @@ const ThreeDViewer = ({ surfaces, analysisBoundary, onPointHover, selectedSurfac
   const mouseRef = useRef(new THREE.Vector2());
 
   const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedPoint, setSelectedPoint] = useState(null);
+  const [visibleSurfaces, setVisibleSurfaces] = useState(new Set());
 
-  // Initialize Three.js scene
+  // Handle point selection with validation
+  const handlePointSelect = (point) => {
+    setSelectedPoint(point);
+    if (point && callbacks.onPointSelect) {
+      callbacks.onPointSelect(point);
+    }
+  };
+
+  // Handle surface visibility toggle with validation
+  const handleSurfaceToggle = (surfaceIndex) => {
+    const newVisibleSurfaces = new Set(visibleSurfaces);
+    if (newVisibleSurfaces.has(surfaceIndex)) {
+      newVisibleSurfaces.delete(surfaceIndex);
+    } else {
+      newVisibleSurfaces.add(surfaceIndex);
+    }
+    setVisibleSurfaces(newVisibleSurfaces);
+    
+    if (callbacks.onSurfaceToggle) {
+      callbacks.onSurfaceToggle(surfaceIndex, newVisibleSurfaces.has(surfaceIndex));
+    }
+  };
+
+  // Initialize Three.js scene with validation
   useEffect(() => {
     if (!mountRef.current) return;
 
-    // Scene setup
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x1a1a1a);
-    sceneRef.current = scene;
+    try {
+      // Scene setup
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x1a1a1a);
+      sceneRef.current = scene;
 
-    // Camera setup
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      mountRef.current.clientWidth / mountRef.current.clientHeight,
-      0.1,
-      1000
-    );
-    camera.position.set(10, 10, 10);
+      // Camera setup
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        mountRef.current.clientWidth / mountRef.current.clientHeight,
+        0.1,
+        1000
+      );
+      camera.position.set(10, 10, 10);
 
-    // Renderer setup
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    rendererRef.current = renderer;
+      // Renderer setup
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      rendererRef.current = renderer;
 
-    // Controls setup
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controlsRef.current = controls;
+      // Controls setup
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controlsRef.current = controls;
 
-    // Lighting
-    const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-    scene.add(ambientLight);
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
+      scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 10, 5);
-    directionalLight.castShadow = true;
-    scene.add(directionalLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+      directionalLight.position.set(10, 10, 5);
+      directionalLight.castShadow = true;
+      scene.add(directionalLight);
 
-    // Grid helper
-    const gridHelper = new THREE.GridHelper(20, 20);
-    scene.add(gridHelper);
+      // Grid helper
+      const gridHelper = new THREE.GridHelper(20, 20);
+      scene.add(gridHelper);
 
-    // Axes helper
-    const axesHelper = new THREE.AxesHelper(5);
-    scene.add(axesHelper);
+      // Axes helper
+      const axesHelper = new THREE.AxesHelper(5);
+      scene.add(axesHelper);
 
-    mountRef.current.appendChild(renderer.domElement);
-    setIsInitialized(true);
+      mountRef.current.appendChild(renderer.domElement);
+      setIsInitialized(true);
 
-    // Animation loop
-    const animate = () => {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    };
-    animate();
+      // Animation loop
+      const animate = () => {
+        requestAnimationFrame(animate);
+        if (controls && controls.update) {
+          controls.update();
+        }
+        if (renderer && scene && camera) {
+          renderer.render(scene, camera);
+        }
+      };
+      animate();
 
-    // Cleanup
-    return () => {
-      if (mountRef.current && renderer.domElement) {
-        mountRef.current.removeChild(renderer.domElement);
-      }
-      renderer.dispose();
-    };
+      // Cleanup
+      return () => {
+        if (mountRef.current && renderer.domElement) {
+          mountRef.current.removeChild(renderer.domElement);
+        }
+        if (renderer) {
+          renderer.dispose();
+        }
+      };
+    } catch (error) {
+      console.error('Error initializing Three.js scene:', error);
+    }
   }, []);
 
   // Handle window resize

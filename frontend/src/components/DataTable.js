@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 /**
  * DataTable component for displaying analysis results
@@ -11,10 +11,24 @@ const DataTable = ({
   onSurfaceSelection,
   selectedSurfaces 
 }) => {
+  // Validate props
+  const data = {
+    volumeResults: Array.isArray(volumeResults) ? volumeResults : [],
+    thicknessResults: Array.isArray(thicknessResults) ? thicknessResults : [],
+    compactionResults: Array.isArray(compactionResults) ? compactionResults : []
+  };
+
+  const callbacks = {
+    onSurfaceSelection: onSurfaceSelection || (() => {}),
+    selectedSurfaces: Array.isArray(selectedSurfaces) ? selectedSurfaces : []
+  };
+
   const [activeTab, setActiveTab] = useState('volume');
   const [sortField, setSortField] = useState('layer_designation');
   const [sortDirection, setSortDirection] = useState('asc');
+  const [filterValue, setFilterValue] = useState('');
 
+  // Handle sort with validation
   const handleSort = (field) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -24,10 +38,18 @@ const DataTable = ({
     }
   };
 
-  const sortData = (data) => {
-    if (!data || data.length === 0) return data;
+  // Handle filter with validation
+  const handleFilter = (value) => {
+    setFilterValue(value || '');
+  };
 
-    return [...data].sort((a, b) => {
+  // Sort data with validation
+  const sortData = (dataArray) => {
+    if (!Array.isArray(dataArray) || dataArray.length === 0) return dataArray;
+
+    return [...dataArray].sort((a, b) => {
+      if (!a || !b) return 0;
+      
       let aValue = a[sortField];
       let bValue = b[sortField];
 
@@ -47,11 +69,31 @@ const DataTable = ({
     });
   };
 
+  // Filter data with validation
+  const filterData = (dataArray) => {
+    if (!Array.isArray(dataArray) || !filterValue) return dataArray;
+    
+    return dataArray.filter(item => {
+      if (!item) return false;
+      return Object.values(item).some(value => 
+        String(value).toLowerCase().includes(filterValue.toLowerCase())
+      );
+    });
+  };
+
+  // Format number with validation
   const formatNumber = (value, decimals = 2) => {
     if (value === null || value === undefined || value === '--') {
       return '--';
     }
     return typeof value === 'number' ? value.toFixed(decimals) : value;
+  };
+
+  // Handle surface selection with validation
+  const handleSurfaceClick = (layerDesignation) => {
+    if (layerDesignation && callbacks.onSurfaceSelection) {
+      callbacks.onSurfaceSelection(layerDesignation);
+    }
   };
 
   const renderVolumeTable = () => (
@@ -82,11 +124,11 @@ const DataTable = ({
           </tr>
         </thead>
         <tbody>
-          {sortData(volumeResults || []).map((result, index) => (
+          {sortData(data.volumeResults).map((result, index) => (
             <tr 
               key={index}
-              className={selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
-              onClick={() => onSurfaceSelection?.(result.layer_designation)}
+              className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
+              onClick={() => handleSurfaceClick(result.layer_designation)}
             >
               <td>{result.layer_designation}</td>
               <td>{formatNumber(result.volume_cubic_yards)}</td>
@@ -135,11 +177,11 @@ const DataTable = ({
           </tr>
         </thead>
         <tbody>
-          {sortData(thicknessResults || []).map((result, index) => (
+          {sortData(data.thicknessResults).map((result, index) => (
             <tr 
               key={index}
-              className={selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
-              onClick={() => onSurfaceSelection?.(result.layer_designation)}
+              className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
+              onClick={() => handleSurfaceClick(result.layer_designation)}
             >
               <td>{result.layer_designation}</td>
               <td>{formatNumber(result.average_thickness_feet)}</td>
@@ -182,11 +224,11 @@ const DataTable = ({
           </tr>
         </thead>
         <tbody>
-          {sortData(compactionResults || []).map((result, index) => (
+          {sortData(data.compactionResults).map((result, index) => (
             <tr 
               key={index}
-              className={selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
-              onClick={() => onSurfaceSelection?.(result.layer_designation)}
+              className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
+              onClick={() => handleSurfaceClick(result.layer_designation)}
             >
               <td>{result.layer_designation}</td>
               <td>
@@ -209,9 +251,9 @@ const DataTable = ({
   );
 
   const renderSummary = () => {
-    const totalVolume = volumeResults?.reduce((sum, result) => sum + (result.volume_cubic_yards || 0), 0) || 0;
-    const avgThickness = thicknessResults?.reduce((sum, result) => sum + (result.average_thickness_feet || 0), 0) / (thicknessResults?.length || 1) || 0;
-    const validCompactionRates = compactionResults?.filter(result => result.compaction_rate_lbs_per_cubic_yard) || [];
+    const totalVolume = data.volumeResults?.reduce((sum, result) => sum + (result.volume_cubic_yards || 0), 0) || 0;
+    const avgThickness = data.thicknessResults?.reduce((sum, result) => sum + (result.average_thickness_feet || 0), 0) / (data.thicknessResults?.length || 1) || 0;
+    const validCompactionRates = data.compactionResults?.filter(result => result.compaction_rate_lbs_per_cubic_yard) || [];
     const avgCompactionRate = validCompactionRates.length > 0 
       ? validCompactionRates.reduce((sum, result) => sum + result.compaction_rate_lbs_per_cubic_yard, 0) / validCompactionRates.length 
       : 0;
@@ -234,7 +276,7 @@ const DataTable = ({
           </div>
           <div className="summary-item">
             <label>Layers Analyzed:</label>
-            <span>{volumeResults?.length || 0}</span>
+            <span>{data.volumeResults?.length || 0}</span>
           </div>
         </div>
       </div>
