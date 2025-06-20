@@ -942,3 +942,10 @@ The Surface Volume and Layer Thickness Analysis Tool has successfully completed 
 **Completion Date**: 2024-12-20
 **Tests Passed**: All memory tests from 3.3.1 pass (see caveat above)
 **Summary**: Implemented efficient numpy operations, chunked/streaming processing, and explicit garbage collection in point cloud processor. Memory usage meets NFR-P1.3 requirements for large file processing. No leaks detected in repeated or streaming operations.
+
+#### 4.1.1 Write WGS84 to UTM Transformation Tests (COMPLETE)
+- Comprehensive synchronous tests implemented in backend/tests/test_coord_transformer.py
+- Coverage: accuracy (real control points), UTM zone detection (including hemisphere), batch transformation, edge cases, error handling, and zone boundary logic
+- All tests pass with <0.1m accuracy as required by PRD and tasks.md
+- Pytest warning about test class collection resolved (helper class renamed)
+- Service implementation in backend/app/services/coord_transformer.py validated by tests
