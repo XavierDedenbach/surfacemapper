@@ -14,6 +14,211 @@ class GeoreferenceParams:
     orientation_degrees: float
     scaling_factor: float
 
+
+class TransformationPipeline:
+    """
+    Complete coordinate transformation pipeline combining scaling, rotation, and UTM transformation
+    """
+    
+    def __init__(self, anchor_lat: float, anchor_lon: float, rotation_degrees: float, scale_factor: float):
+        """
+        Initialize transformation pipeline
+        
+        Args:
+            anchor_lat: WGS84 latitude of anchor point
+            anchor_lon: WGS84 longitude of anchor point
+            rotation_degrees: Rotation angle in degrees (clockwise from North)
+            scale_factor: Uniform scaling factor
+        """
+        # Validate parameters
+        if not isinstance(anchor_lat, (int, float)) or np.isnan(anchor_lat) or np.isinf(anchor_lat):
+            raise ValueError("Anchor latitude must be a finite number")
+        if not isinstance(anchor_lon, (int, float)) or np.isnan(anchor_lon) or np.isinf(anchor_lon):
+            raise ValueError("Anchor longitude must be a finite number")
+        if not isinstance(rotation_degrees, (int, float)) or np.isnan(rotation_degrees) or np.isinf(rotation_degrees):
+            raise ValueError("Rotation degrees must be a finite number")
+        if not isinstance(scale_factor, (int, float)) or np.isnan(scale_factor) or np.isinf(scale_factor):
+            raise ValueError("Scale factor must be a finite number")
+        
+        if anchor_lat < -90 or anchor_lat > 90:
+            raise ValueError("Anchor latitude must be between -90 and 90 degrees")
+        if anchor_lon < -180 or anchor_lon > 180:
+            raise ValueError("Anchor longitude must be between -180 and 180 degrees")
+        if scale_factor < 0:
+            raise ValueError("Scale factor must be non-negative")
+        
+        self.anchor_lat = anchor_lat
+        self.anchor_lon = anchor_lon
+        self.rotation_degrees = rotation_degrees
+        self.scale_factor = scale_factor
+        
+        # Initialize coordinate systems
+        self.wgs84 = pyproj.CRS("EPSG:4326")
+        self.utm_zone = self._determine_utm_zone()
+        self.utm_crs = pyproj.CRS(self.utm_zone)
+        
+        # Create transformers
+        self.wgs84_to_utm_transformer = pyproj.Transformer.from_crs(
+            self.wgs84, self.utm_crs, always_xy=True
+        )
+        self.utm_to_wgs84_transformer = pyproj.Transformer.from_crs(
+            self.utm_crs, self.wgs84, always_xy=True
+        )
+        
+        # Get anchor point in UTM coordinates
+        self.anchor_utm_x, self.anchor_utm_y = self.wgs84_to_utm_transformer.transform(
+            self.anchor_lon, self.anchor_lat
+        )
+        
+        # Create transformation matrices
+        self.rotation_matrix = self._get_rotation_matrix_z(rotation_degrees)
+        self.scaling_matrix = self._get_scaling_matrix(scale_factor)
+        
+        # Combined transformation matrix (scale then rotate)
+        self.combined_matrix = np.dot(self.rotation_matrix, self.scaling_matrix)
+    
+    def _determine_utm_zone(self) -> str:
+        """Determine UTM zone for the anchor point"""
+        zone_number = int((self.anchor_lon + 180) / 6) + 1
+        hemisphere = "N" if self.anchor_lat >= 0 else "S"
+        return f"EPSG:32{6 if hemisphere == 'N' else 7}{zone_number:02d}"
+    
+    def _get_rotation_matrix_z(self, angle_degrees: float) -> np.ndarray:
+        """Get 3D rotation matrix around Z-axis"""
+        angle_rad = np.radians(-angle_degrees)  # Negative for clockwise rotation
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+        
+        return np.array([
+            [cos_a, -sin_a, 0],
+            [sin_a,  cos_a, 0],
+            [0,      0,    1]
+        ])
+    
+    def _get_scaling_matrix(self, scale_factor: float) -> np.ndarray:
+        """Get 3D uniform scaling matrix"""
+        return np.array([
+            [scale_factor, 0, 0],
+            [0, scale_factor, 0],
+            [0, 0, scale_factor]
+        ])
+    
+    def transform_to_utm(self, points: np.ndarray) -> np.ndarray:
+        """
+        Transform local PLY coordinates to UTM coordinates
+        
+        Args:
+            points: Nx3 numpy array of local coordinates (x, y, z)
+            
+        Returns:
+            Nx3 numpy array of UTM coordinates (x, y, z)
+        """
+        # Validate input
+        if points is None:
+            raise ValueError("Points array cannot be None")
+        if not isinstance(points, np.ndarray):
+            raise ValueError("Points must be a numpy array")
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("Points must be a 2D array with 3 columns (Nx3)")
+        
+        # Handle empty array
+        if points.shape[0] == 0:
+            return points.copy()
+        
+        # Apply local transformations (scale then rotate)
+        transformed_points = np.dot(points, self.combined_matrix.T)
+        
+        # Translate to UTM coordinates
+        utm_points = transformed_points.copy()
+        utm_points[:, 0] += self.anchor_utm_x
+        utm_points[:, 1] += self.anchor_utm_y
+        # Z coordinate remains unchanged (already in feet)
+        
+        return utm_points
+    
+    def transform_local_only(self, points: np.ndarray) -> np.ndarray:
+        """
+        Apply only local transformations (scaling and rotation) without UTM translation
+        
+        Args:
+            points: Nx3 numpy array of local coordinates
+            
+        Returns:
+            Nx3 numpy array of transformed local coordinates
+        """
+        # Validate input
+        if points is None:
+            raise ValueError("Points array cannot be None")
+        if not isinstance(points, np.ndarray):
+            raise ValueError("Points must be a numpy array")
+        if points.ndim != 2 or points.shape[1] != 3:
+            raise ValueError("Points must be a 2D array with 3 columns (Nx3)")
+        
+        # Handle empty array
+        if points.shape[0] == 0:
+            return points.copy()
+        
+        # Apply local transformations only
+        return np.dot(points, self.combined_matrix.T)
+    
+    def inverse_transform(self, utm_points: np.ndarray) -> np.ndarray:
+        """
+        Transform UTM coordinates back to local PLY coordinates
+        
+        Args:
+            utm_points: Nx3 numpy array of UTM coordinates (x, y, z)
+            
+        Returns:
+            Nx3 numpy array of local coordinates (x, y, z)
+        """
+        # Validate input
+        if utm_points is None:
+            raise ValueError("UTM points array cannot be None")
+        if not isinstance(utm_points, np.ndarray):
+            raise ValueError("UTM points must be a numpy array")
+        if utm_points.ndim != 2 or utm_points.shape[1] != 3:
+            raise ValueError("UTM points must be a 2D array with 3 columns (Nx3)")
+        
+        # Handle empty array
+        if utm_points.shape[0] == 0:
+            return utm_points.copy()
+        
+        # Remove UTM translation
+        local_transformed = utm_points.copy()
+        local_transformed[:, 0] -= self.anchor_utm_x
+        local_transformed[:, 1] -= self.anchor_utm_y
+        
+        # Apply inverse local transformations
+        inverse_matrix = np.linalg.inv(self.combined_matrix)
+        original_points = np.dot(local_transformed, inverse_matrix.T)
+        
+        return original_points
+    
+    def get_transformation_metadata(self) -> Dict[str, Any]:
+        """
+        Get metadata about the transformation pipeline
+        
+        Returns:
+            Dictionary containing transformation parameters and metadata
+        """
+        return {
+            'anchor_lat': self.anchor_lat,
+            'anchor_lon': self.anchor_lon,
+            'rotation_degrees': self.rotation_degrees,
+            'scale_factor': self.scale_factor,
+            'utm_zone': self.utm_zone,
+            'anchor_utm_x': self.anchor_utm_x,
+            'anchor_utm_y': self.anchor_utm_y,
+            'transformation_order': ['scale', 'rotate', 'translate'],
+            'coordinate_systems': {
+                'source': 'local_ply',
+                'target': 'utm',
+                'wgs84_epsg': 'EPSG:4326',
+                'utm_epsg': self.utm_zone
+            }
+        }
+
+
 class CoordinateTransformer:
     """
     Handles coordinate transformations using pyproj
@@ -324,4 +529,30 @@ class CoordinateTransformer:
         # Apply scaling: points * scale_factor
         scaled_points = points * scale_factor
         
-        return scaled_points 
+        return scaled_points
+    
+    def create_transformation_pipeline(
+        self, 
+        anchor_lat: float, 
+        anchor_lon: float, 
+        rotation_degrees: float, 
+        scale_factor: float
+    ) -> TransformationPipeline:
+        """
+        Create a complete transformation pipeline
+        
+        Args:
+            anchor_lat: WGS84 latitude of anchor point
+            anchor_lon: WGS84 longitude of anchor point
+            rotation_degrees: Rotation angle in degrees (clockwise from North)
+            scale_factor: Uniform scaling factor
+            
+        Returns:
+            TransformationPipeline instance
+        """
+        return TransformationPipeline(
+            anchor_lat=anchor_lat,
+            anchor_lon=anchor_lon,
+            rotation_degrees=rotation_degrees,
+            scale_factor=scale_factor
+        ) 
