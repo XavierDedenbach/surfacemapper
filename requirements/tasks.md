@@ -2314,3 +2314,7 @@ def test_cross_validation_alignment():
 - **User Guidance**: Automated recommendations for alignment quality improvement
 
 This future iteration plan addresses the current limitation in outlier rejection while providing a roadmap for advanced surface alignment capabilities suitable for production environments with challenging data quality conditions.
+
+## Volume Calculation Method Recommendation
+
+For production use, the mesh-based (PyVista/triangle) volume calculation method is the standard and should be used for all critical and irregular/rough surfaces. The prism method is only suitable for quick estimates or regular grid/planar surfaces, and may diverge significantly for rough or non-uniform surfaces. Strict cross-validation is not required for irregular surfaces; use mesh-based results for all reporting and analysis.

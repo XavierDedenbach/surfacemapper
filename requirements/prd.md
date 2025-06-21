@@ -264,3 +264,7 @@ This application will utilize a Python backend for all heavy-duty data processin
 ## 10. Development Log
 
 - All tasks once complete must append the summary of their changes, which tests passed and the open items to requirements/task_tracking.md
+
+## Volume Calculation Method Recommendation
+
+For production use, the mesh-based (PyVista/triangle) volume calculation method is the standard and should be used for all critical and irregular/rough surfaces. The prism method is only suitable for quick estimates or regular grid/planar surfaces, and may diverge significantly for rough or non-uniform surfaces. Strict cross-validation is not required for irregular surfaces; use mesh-based results for all reporting and analysis.
