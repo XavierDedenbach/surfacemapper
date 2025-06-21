@@ -584,17 +584,32 @@ class SurfaceAlignment:
             tol = 1e-6
             prev_error = None
             mask = np.ones(src.shape[0], dtype=bool)
+            
             for i in range(max_iter):
                 tree = cKDTree(tgt)
                 dists, idx = tree.query(src)
                 tgt_corr = tgt[idx]
+                
                 if reject_outliers:
-                    threshold = np.percentile(dists, 90)
+                    # Use a more robust outlier rejection based on distance percentiles
+                    threshold = np.percentile(dists, 85)  # Keep 85% of points
                     mask = dists < threshold
+                    # Ensure we have enough points for alignment
+                    if np.sum(mask) < 10:
+                        mask = dists < np.percentile(dists, 95)
                 else:
                     mask = np.ones(src.shape[0], dtype=bool)
+                
                 src_corr = src[mask]
                 tgt_corr = tgt_corr[mask]
+                
+                if len(src_corr) < 3:
+                    # Fallback to simple centroid alignment if too few points
+                    src_centroid = np.mean(source, axis=0)
+                    tgt_centroid = np.mean(target, axis=0)
+                    offset = tgt_centroid - src_centroid
+                    return {'rotation': 0.0, 'scale': 1.0, 'offset': offset}
+                
                 src_xy = src_corr[:, :2]
                 tgt_xy = tgt_corr[:, :2]
                 src_centroid = np.mean(src_xy, axis=0)
@@ -623,10 +638,27 @@ class SurfaceAlignment:
                     break
                 prev_error = error
                 src = src_new
+            
             # After convergence, compute best-fit similarity from original to target
-            # Serial approach: translation -> rotation -> scale
-            src0_xy = source[:, :2]
-            tgt_xy = target[:, :2]
+            # Use only inlier points for final transformation calculation
+            if reject_outliers:
+                # Recompute distances with final aligned source
+                tree = cKDTree(tgt)
+                dists, idx = tree.query(src)
+                threshold = np.percentile(dists, 85)
+                final_mask = dists < threshold
+                if np.sum(final_mask) < 10:
+                    final_mask = dists < np.percentile(dists, 95)
+                
+                src_inliers = source[final_mask]
+                tgt_inliers = tgt[final_mask]
+            else:
+                src_inliers = source
+                tgt_inliers = target
+            
+            # Compute final transformation using only inliers
+            src0_xy = src_inliers[:, :2]
+            tgt_xy = tgt_inliers[:, :2]
             
             # Step 1: Fit translation (centroid difference)
             src0_centroid = np.mean(src0_xy, axis=0)
@@ -653,12 +685,17 @@ class SurfaceAlignment:
             
             # Final offset combines translation and any remaining difference
             xy_offset = translation
-            z_offset = np.mean(target[:, 2] - source[:, 2])
+            z_offset = np.mean(tgt_inliers[:, 2] - src_inliers[:, 2])
             offset_final = np.array([xy_offset[0], xy_offset[1], z_offset])
+            
             result = {'rotation': rotation_final, 'scale': scale_final, 'offset': offset_final}
             if return_metrics:
-                rmse = np.sqrt(np.mean(np.sum((src[mask] - tgt_corr) ** 2, axis=1)))
-                inlier_ratio = float(np.sum(mask)) / len(source)
+                if reject_outliers:
+                    rmse = np.sqrt(np.mean(np.sum((src[final_mask] - tgt_inliers) ** 2, axis=1)))
+                    inlier_ratio = float(np.sum(final_mask)) / len(source)
+                else:
+                    rmse = np.sqrt(np.mean(np.sum((src - tgt) ** 2, axis=1)))
+                    inlier_ratio = 1.0
                 result['rmse'] = rmse
                 result['inlier_ratio'] = inlier_ratio
             return result
