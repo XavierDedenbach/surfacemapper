@@ -3,11 +3,8 @@ Tests for analysis results retrieval functionality
 """
 import pytest
 import time
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 import numpy as np
-
-# Skip TestClient tests due to compatibility issues
-pytest.skip("Skipping TestClient tests due to FastAPI/Starlette version compatibility issues.", allow_module_level=True)
 
 from fastapi.testclient import TestClient
 from app.main import app
@@ -83,7 +80,6 @@ class TestResultsRetrieval:
             }
         }
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_complete_results_retrieval(self, client):
         """Test complete results retrieval with all components"""
         with patch.object(AnalysisExecutor, 'get_results', return_value=self.mock_complete_results):
@@ -128,7 +124,6 @@ class TestResultsRetrieval:
             assert "compaction_rate_lbs_per_cubic_yard" in layer_result
             assert "tonnage_input" in layer_result
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_results_not_ready(self, client):
         """Test results retrieval when analysis is still processing"""
         with patch.object(AnalysisExecutor, 'get_results', return_value=None):
@@ -141,7 +136,6 @@ class TestResultsRetrieval:
         assert "estimated_completion" in data
         assert "progress" in data
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_analysis_not_found(self, client):
         """Test results retrieval for non-existent analysis"""
         with patch.object(AnalysisExecutor, 'get_results', return_value=None):
@@ -153,7 +147,6 @@ class TestResultsRetrieval:
         assert "error" in data
         assert "not found" in data["error"].lower()
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_partial_results_volume_only(self, client):
         """Test partial results retrieval for volume only"""
         partial_results = {
@@ -172,7 +165,6 @@ class TestResultsRetrieval:
         assert "thickness_results" not in data
         assert "compaction_rates" not in data
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_partial_results_thickness_only(self, client):
         """Test partial results retrieval for thickness only"""
         partial_results = {
@@ -191,7 +183,6 @@ class TestResultsRetrieval:
         assert "volume_results" not in data
         assert "compaction_rates" not in data
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_result_formatting_and_units(self, client):
         """Test result formatting and unit validation"""
         with patch.object(AnalysisExecutor, 'get_results', return_value=self.mock_complete_results):
@@ -217,7 +208,6 @@ class TestResultsRetrieval:
             if compaction_result["compaction_rate_lbs_per_cubic_yard"] is not None:
                 assert compaction_result["compaction_rate_lbs_per_cubic_yard"] > 0
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_result_caching_behavior(self, client):
         """Test result caching behavior for performance"""
         with patch.object(AnalysisExecutor, 'get_results', return_value=self.mock_complete_results):
@@ -238,7 +228,6 @@ class TestResultsRetrieval:
         # Second request should be faster (cached)
         assert time2 < time1
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_cancelled_analysis_results(self, client):
         """Test results retrieval for cancelled analysis"""
         cancelled_results = {
@@ -258,7 +247,6 @@ class TestResultsRetrieval:
         assert data["analysis_metadata"]["status"] == "cancelled"
         assert "cancellation_time" in data["analysis_metadata"]
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_failed_analysis_results(self, client):
         """Test results retrieval for failed analysis"""
         failed_results = {
@@ -280,7 +268,6 @@ class TestResultsRetrieval:
         assert "error_message" in data["analysis_metadata"]
         assert "failure_time" in data["analysis_metadata"]
 
-    @pytest.mark.skip(reason="TestClient compatibility issues")
     def test_results_with_confidence_intervals(self, client):
         """Test results include proper confidence intervals"""
         with patch.object(AnalysisExecutor, 'get_results', return_value=self.mock_complete_results):

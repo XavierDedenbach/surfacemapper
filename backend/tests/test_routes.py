@@ -2,7 +2,6 @@
 Integration tests for API routes
 """
 import pytest
-pytest.skip("Skipping all route tests due to TestClient incompatibility with FastAPI/Starlette versions.", allow_module_level=True)
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 from app.main import app
@@ -43,7 +42,7 @@ class TestSurfaceRoutes:
         
         # Create a mock file upload
         files = {"file": ("test.ply", b"mock file content", "application/octet-stream")}
-        response = client.post("/surfaces/upload", files=files)
+        response = client.post("/api/v1/surfaces/upload", files=files)
         
         assert response.status_code == 200
         data = response.json()
@@ -80,7 +79,7 @@ class TestSurfaceRoutes:
             "generate_base_surface": False
         }
         
-        response = client.post("/surfaces/process", json=request_data)
+        response = client.post("/api/v1/surfaces/process", json=request_data)
         assert response.status_code == 200
         data = response.json()
         assert "message" in data
@@ -90,7 +89,7 @@ class TestSurfaceRoutes:
     def test_get_processing_status(self, client):
         """Test processing status endpoint"""
         job_id = "test-job-123"
-        response = client.get(f"/surfaces/status/{job_id}")
+        response = client.get(f"/api/v1/surfaces/status/{job_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["job_id"] == job_id
@@ -114,14 +113,14 @@ class TestDataValidation:
             "analysis_boundary": {
                 "wgs84_coordinates": [
                     (40.0, -120.0),
-                    (40.0, -119.0),
+                    (40.0, -119.0),  # Invalid: only 2 coordinates instead of 4
                     (41.0, -119.0),
                     (41.0, -120.0)
                 ]
             }
         }
         
-        response = client.post("/surfaces/process", json=request_data)
+        response = client.post("/api/v1/surfaces/process", json=request_data)
         # Should return validation error
         assert response.status_code in [400, 422]
     
@@ -145,6 +144,6 @@ class TestDataValidation:
             }
         }
         
-        response = client.post("/surfaces/process", json=request_data)
+        response = client.post("/api/v1/surfaces/process", json=request_data)
         # Should return validation error
         assert response.status_code in [400, 422] 

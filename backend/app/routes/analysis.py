@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 from app.services.analysis_executor import AnalysisExecutor
 from app.services import thickness_calculator
-from app.services.coord_transformer import CoordTransformer
+from app.services.coord_transformer import CoordinateTransformer
 import numpy as np
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
@@ -143,7 +143,7 @@ async def point_query(
     if coordinate_system == "wgs84":
         # Use metadata to get transformation (mocked here)
         # In production, use actual transformation logic
-        transformer = CoordTransformer(
+        transformer = CoordinateTransformer(
             anchor_lat=results["georef"]["lat"],
             anchor_lon=results["georef"]["lon"],
             rotation_degrees=results["georef"]["orientation"],
@@ -208,7 +208,7 @@ async def batch_point_query(
             continue  # skip invalid
         pt = np.array([x, y])
         if coordinate_system == "wgs84":
-            transformer = CoordTransformer(
+            transformer = CoordinateTransformer(
                 anchor_lat=results["georef"]["lat"],
                 anchor_lon=results["georef"]["lon"],
                 rotation_degrees=results["georef"]["orientation"],
@@ -243,4 +243,208 @@ async def batch_point_query(
     return {
         "results": results_list,
         "total_points": len(results_list)
-    } 
+    }
+
+@router.get("/{analysis_id}/surface/{surface_id}/mesh")
+async def get_3d_visualization_data(
+    analysis_id: str,
+    surface_id: int,
+    level_of_detail: str = Query("medium", description="Level of detail: low, medium, high"),
+    max_vertices: Optional[int] = Query(None, description="Maximum number of vertices for mesh simplification"),
+    preserve_boundaries: bool = Query(True, description="Preserve boundary edges during simplification")
+):
+    """
+    Get 3D mesh data for visualization with optional simplification
+    """
+    try:
+        # Validate surface_id
+        if surface_id < 0:
+            raise HTTPException(status_code=400, detail="Surface ID must be non-negative")
+        
+        # Validate level of detail
+        if level_of_detail not in ["low", "medium", "high"]:
+            raise HTTPException(status_code=400, detail="Level of detail must be low, medium, or high")
+        
+        # Get analysis results
+        results = executor.get_results(analysis_id)
+        if results is None:
+            raise HTTPException(status_code=404, detail="Analysis not found or not completed")
+        
+        if results.get("status") != "completed":
+            raise HTTPException(status_code=400, detail="Analysis not completed")
+        
+        # Get surface data
+        surface_tins = results.get("surface_tins")
+        if not surface_tins or surface_id >= len(surface_tins):
+            raise HTTPException(status_code=404, detail="Surface not found")
+        
+        tin = surface_tins[surface_id]
+        if not hasattr(tin, 'points') or not hasattr(tin, 'simplices'):
+            raise HTTPException(status_code=500, detail="Invalid surface data")
+        
+        # Extract mesh data
+        vertices = tin.points.tolist()
+        faces = tin.simplices.tolist()
+        
+        # Calculate bounds
+        if len(vertices) > 0:
+            vertices_array = np.array(vertices)
+            bounds = {
+                "x_min": float(np.min(vertices_array[:, 0])),
+                "x_max": float(np.max(vertices_array[:, 0])),
+                "y_min": float(np.min(vertices_array[:, 1])),
+                "y_max": float(np.max(vertices_array[:, 1])),
+                "z_min": float(np.min(vertices_array[:, 2])),
+                "z_max": float(np.max(vertices_array[:, 2]))
+            }
+        else:
+            bounds = {
+                "x_min": 0.0, "x_max": 0.0,
+                "y_min": 0.0, "y_max": 0.0,
+                "z_min": 0.0, "z_max": 0.0
+            }
+        
+        # Apply mesh simplification based on level of detail
+        simplified_vertices, simplified_faces = _simplify_mesh(
+            vertices, faces, level_of_detail, max_vertices, preserve_boundaries
+        )
+        
+        # Recalculate bounds for simplified mesh
+        if len(simplified_vertices) > 0:
+            simplified_array = np.array(simplified_vertices)
+            bounds = {
+                "x_min": float(np.min(simplified_array[:, 0])),
+                "x_max": float(np.max(simplified_array[:, 0])),
+                "y_min": float(np.min(simplified_array[:, 1])),
+                "y_max": float(np.max(simplified_array[:, 1])),
+                "z_min": float(np.min(simplified_array[:, 2])),
+                "z_max": float(np.max(simplified_array[:, 2]))
+            }
+        
+        return {
+            "vertices": simplified_vertices,
+            "faces": simplified_faces,
+            "bounds": bounds,
+            "metadata": {
+                "analysis_id": analysis_id,
+                "surface_id": surface_id,
+                "level_of_detail": level_of_detail,
+                "original_vertex_count": len(vertices),
+                "simplified_vertex_count": len(simplified_vertices),
+                "original_face_count": len(faces),
+                "simplified_face_count": len(simplified_faces),
+                "simplification_ratio": len(simplified_vertices) / len(vertices) if len(vertices) > 0 else 1.0
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+def _simplify_mesh(vertices, faces, level_of_detail, max_vertices=None, preserve_boundaries=True):
+    """
+    Simplify mesh based on level of detail and parameters
+    """
+    if not vertices or not faces:
+        return vertices, faces
+    
+    # Determine target vertex count based on level of detail
+    original_vertex_count = len(vertices)
+    
+    if max_vertices is not None:
+        target_vertices = min(max_vertices, original_vertex_count)
+    else:
+        if level_of_detail == "high":
+            target_vertices = original_vertex_count
+        elif level_of_detail == "medium":
+            target_vertices = max(original_vertex_count // 2, 100)
+        else:  # low
+            target_vertices = max(original_vertex_count // 4, 50)
+    
+    # If no simplification needed, return original
+    if target_vertices >= original_vertex_count:
+        return vertices, faces
+    
+    # Simple mesh simplification using vertex clustering
+    # In production, use more sophisticated algorithms like Quadric Error Metrics
+    simplified_vertices, simplified_faces = _cluster_based_simplification(
+        vertices, faces, target_vertices, preserve_boundaries
+    )
+    
+    return simplified_vertices, simplified_faces
+
+
+def _cluster_based_simplification(vertices, faces, target_vertices, preserve_boundaries):
+    """
+    Simple vertex clustering-based mesh simplification
+    """
+    if len(vertices) <= target_vertices:
+        return vertices, faces
+    
+    # Convert to numpy arrays for easier manipulation
+    vertices_array = np.array(vertices)
+    faces_array = np.array(faces)
+    
+    # Calculate bounding box
+    min_coords = np.min(vertices_array, axis=0)
+    max_coords = np.max(vertices_array, axis=0)
+    
+    # Create grid for clustering
+    grid_size = int(np.ceil(np.power(target_vertices, 1/3)))
+    cell_size = (max_coords - min_coords) / grid_size
+    
+    # Assign vertices to grid cells
+    vertex_clusters = {}
+    cluster_centers = {}
+    
+    for i, vertex in enumerate(vertices_array):
+        # Calculate grid cell coordinates
+        cell_coords = ((vertex - min_coords) / cell_size).astype(int)
+        cell_coords = np.clip(cell_coords, 0, grid_size - 1)
+        cell_key = tuple(cell_coords)
+        
+        if cell_key not in vertex_clusters:
+            vertex_clusters[cell_key] = []
+            cluster_centers[cell_key] = []
+        
+        vertex_clusters[cell_key].append(i)
+        cluster_centers[cell_key].append(vertex)
+    
+    # Create vertex mapping and new vertices
+    vertex_mapping = {}
+    new_vertices = []
+    
+    for cell_key, vertex_indices in vertex_clusters.items():
+        if vertex_indices:
+            # Use centroid of cluster as new vertex
+            cluster_center = np.mean(cluster_centers[cell_key], axis=0)
+            new_vertex_id = len(new_vertices)
+            new_vertices.append(cluster_center.tolist())
+            
+            # Map all vertices in cluster to new vertex
+            for old_vertex_id in vertex_indices:
+                vertex_mapping[old_vertex_id] = new_vertex_id
+    
+    # Create new faces
+    new_faces = []
+    seen_faces = set()
+    
+    for face in faces_array:
+        # Map face vertices to new vertices
+        new_face = [vertex_mapping.get(v, v) for v in face]
+        
+        # Remove degenerate faces (all vertices the same)
+        if len(set(new_face)) == 1:
+            continue
+        
+        # Remove duplicate faces
+        face_key = tuple(sorted(new_face))
+        if face_key in seen_faces:
+            continue
+        
+        seen_faces.add(face_key)
+        new_faces.append(new_face)
+    
+    return new_vertices, new_faces 

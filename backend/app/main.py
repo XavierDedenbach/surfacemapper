@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 import logging
-from app.routes import surfaces
+from app.routes import surfaces, analysis
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -43,6 +43,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(surfaces.router, prefix="/api/v1")
+app.include_router(analysis.router)
 
 @app.get("/health")
 async def health_check():
