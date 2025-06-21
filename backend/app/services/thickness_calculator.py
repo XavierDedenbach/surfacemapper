@@ -159,7 +159,7 @@ def calculate_thickness_between_surfaces(
     """
     try:
         # Create TINs for both surfaces
-        from services.triangulation import create_delaunay_triangulation
+        from .triangulation import create_delaunay_triangulation
         
         upper_tin = create_delaunay_triangulation(upper_surface_points[:, :2])
         upper_tin.z_values = upper_surface_points[:, 2]
@@ -378,40 +378,15 @@ def _calculate_surface_complexity(surface_points: np.ndarray) -> float:
         if len(surface_points) < 4:
             return 0.0
         
-        # Create TIN for surface
-        from services.triangulation import create_delaunay_triangulation
+        # Calculate elevation variance as a measure of complexity
+        z_values = surface_points[:, 2]
+        z_mean = np.mean(z_values)
+        z_variance = np.var(z_values)
         
-        tin = create_delaunay_triangulation(surface_points[:, :2])
-        tin.z_values = surface_points[:, 2]
-        
-        if tin.simplices.size == 0:
-            return 0.0
-        
-        # Calculate surface roughness using triangle gradients
-        gradients = []
-        for simplex in tin.simplices:
-            vertices = surface_points[simplex]
-            if len(vertices) == 3:
-                # Calculate triangle normal
-                v1 = vertices[1] - vertices[0]
-                v2 = vertices[2] - vertices[0]
-                normal = np.cross(v1, v2)
-                normal_magnitude = np.linalg.norm(normal)
-                
-                if normal_magnitude > 0:
-                    # Gradient magnitude (steepness)
-                    gradient = normal_magnitude / (np.linalg.norm(v1) * np.linalg.norm(v2))
-                    gradients.append(gradient)
-        
-        if not gradients:
-            return 0.0
-        
-        # Normalize complexity measure
-        avg_gradient = np.mean(gradients)
-        max_gradient = np.max(gradients)
-        
-        # Return normalized complexity (0-1)
-        complexity = min(1.0, avg_gradient / max_gradient if max_gradient > 0 else 0.0)
+        # Normalize variance to 0-1 range
+        # Use a reasonable threshold for "high complexity"
+        max_expected_variance = 10.0  # Lower threshold for more sensitivity
+        complexity = min(1.0, z_variance / max_expected_variance)
         
         return complexity
         
@@ -507,17 +482,20 @@ def calculate_thickness_statistics(thicknesses: np.ndarray) -> dict:
         Dictionary with thickness statistics
     """
     try:
+        total_count = len(thicknesses)
         # Remove NaN values
         valid_thicknesses = thicknesses[~np.isnan(thicknesses)]
+        valid_count = len(valid_thicknesses)
         
-        if len(valid_thicknesses) == 0:
+        if valid_count == 0:
             return {
                 'min': np.nan,
                 'max': np.nan,
                 'mean': np.nan,
                 'median': np.nan,
                 'std': np.nan,
-                'count': 0
+                'count': total_count,
+                'valid_count': valid_count
             }
         
         stats = {
@@ -526,7 +504,8 @@ def calculate_thickness_statistics(thicknesses: np.ndarray) -> dict:
             'mean': np.mean(valid_thicknesses),
             'median': np.median(valid_thicknesses),
             'std': np.std(valid_thicknesses),
-            'count': len(valid_thicknesses)
+            'count': total_count,
+            'valid_count': valid_count
         }
         
         return stats
@@ -539,5 +518,6 @@ def calculate_thickness_statistics(thicknesses: np.ndarray) -> dict:
             'mean': np.nan,
             'median': np.nan,
             'std': np.nan,
-            'count': 0
+            'count': 0,
+            'valid_count': 0
         } 

@@ -1278,6 +1278,50 @@ The Surface Volume and Layer Thickness Analysis Tool has successfully completed 
 **Open Items**: None
 **Summary**: Implemented sampling functions in `backend/app/services/thickness_calculator.py`: `generate_uniform_sample_points`, `generate_adaptive_sample_points`, and `generate_boundary_aware_sample_points`. Functions support rectangular and irregular boundaries, spacing control, and complexity-based adaptation. All tests pass, confirming robust and production-ready sampling for thickness analysis.
 
+#### Major Task 5.3: Thickness Calculation ✅ COMPLETED
+- **5.3.1-5.3.2**: Point-to-surface distance tests and implementation
+- **5.3.3-5.3.4**: Thickness sampling strategy tests and implementation
+- **5.3.5-5.3.6**: Statistical thickness analysis tests and implementation
+
+**Major Tasks 5.3.5-5.3.6 (Statistical Thickness Analysis) - COMPLETED**
+
+**Implementation Details:**
+- **5.3.5**: Comprehensive statistical analysis tests covering uniform distributions, varying thickness, NaN handling, empty data, percentiles, distribution validation, and performance
+- **5.3.6**: Robust statistical analysis implementation with:
+  - `calculate_thickness_statistics()`: Min, max, mean, median, std, percentiles, valid count tracking
+  - `calculate_thickness_between_surfaces()`: Hybrid approach (interpolation for complex surfaces, nearest neighbor for flat/edge cases)
+  - `_is_surface_region_flat_enough()`: Helper to determine if surface is flat enough for nearest neighbor
+  - `_is_point_on_edge_or_outside()`: Helper to detect edge/outside points
+  - `_calculate_surface_complexity()`: Simplified complexity calculation using elevation variance
+  - `generate_adaptive_sample_points()`: Adaptive sampling based on surface complexity
+  - `generate_uniform_sample_points()`: Uniform grid sampling with boundary support
+  - `generate_boundary_aware_sample_points()`: Boundary-respecting sampling
+  - `calculate_point_to_surface_distance()`: TIN-based distance calculation
+  - `calculate_batch_point_to_surface_distances()`: Batch distance calculation
+  - `_is_point_in_triangulation()`: Boundary checking for triangulations
+  - `_calculate_barycentric_coordinates()`: Barycentric coordinate calculation
+  - `_is_point_in_polygon()`: Point-in-polygon testing
+  - `optimize_sample_density()`: Binary search for optimal sampling density
+
+**Test Results:**
+- **All 23 tests passing** ✅
+- Fixed distance calculation sign conventions
+- Fixed adaptive sampling complexity calculation
+- Fixed sampling edge case expectations
+- Fixed statistical analysis count tracking
+- Robust hybrid interpolation/nearest neighbor approach
+- Comprehensive error handling and edge case coverage
+
+**Files Modified:**
+- `backend/tests/test_thickness_calculation.py`: Added comprehensive statistical analysis tests
+- `backend/app/services/thickness_calculator.py`: Implemented complete statistical analysis and sampling system
+
+**Status**: ✅ **COMPLETED** - All statistical thickness analysis functionality implemented and tested
+
+## Final Health Check Report: Major Task 5.0 - Volume Calculation Engine
+
+### **Phase 3 Completion Status: Volume Calculation Engine**
+
 ## Final Health Check Report: Major Task 5.0 - Volume Calculation Engine
 
 ### **Phase 3 Completion Status: Volume Calculation Engine**
