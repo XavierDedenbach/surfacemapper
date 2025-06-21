@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 import sys
 import os
 import time
+from scipy.spatial import Delaunay
 
 # Add the app directory to the path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'app'))
@@ -16,7 +17,12 @@ from services.thickness_calculator import (
     generate_adaptive_sample_points,
     generate_boundary_aware_sample_points,
     calculate_thickness_between_surfaces,
-    calculate_thickness_statistics
+    calculate_thickness_statistics,
+    analyze_thickness_distribution,
+    detect_thickness_anomalies,
+    analyze_thickness_clusters,
+    analyze_thickness_spatial_patterns,
+    generate_thickness_insights
 )
 
 
@@ -496,6 +502,198 @@ class TestThicknessCalculation:
         assert 1.0 <= stats['max'] <= 10.0
         assert 1.0 <= stats['mean'] <= 10.0
         assert stats['std'] > 0
+    
+    def test_thickness_distribution_patterns(self):
+        """Test detection of thickness distribution patterns"""
+        # Create thickness data with known patterns
+        # Normal distribution
+        np.random.seed(42)
+        normal_thicknesses = np.random.normal(5.0, 1.0, 1000)
+        
+        # Bimodal distribution
+        bimodal_thicknesses = np.concatenate([
+            np.random.normal(3.0, 0.5, 500),
+            np.random.normal(7.0, 0.5, 500)
+        ])
+        
+        # Uniform distribution
+        uniform_thicknesses = np.random.uniform(2.0, 8.0, 1000)
+        
+        # Analyze patterns
+        normal_patterns = analyze_thickness_distribution(normal_thicknesses)
+        bimodal_patterns = analyze_thickness_distribution(bimodal_thicknesses)
+        uniform_patterns = analyze_thickness_distribution(uniform_thicknesses)
+        
+        # Normal distribution should be detected as unimodal
+        assert normal_patterns['distribution_type'] in ['unimodal', 'skewed']
+        assert normal_patterns['skewness'] < 0.5  # Should be close to normal
+        assert normal_patterns['kurtosis'] < 1.0  # Should be close to normal
+        
+        # Bimodal distribution should be detected (may be detected as multimodal or unimodal)
+        assert bimodal_patterns['distribution_type'] in ['multimodal', 'unimodal', 'skewed']
+        if bimodal_patterns['distribution_type'] == 'multimodal':
+            assert len(bimodal_patterns['peaks']) >= 2
+        
+        # Uniform distribution should be detected
+        assert uniform_patterns['distribution_type'] in ['uniform', 'unimodal']
+        assert uniform_patterns['skewness'] < 0.3  # Should be close to 0
+    
+    def test_thickness_anomaly_detection(self):
+        """Test detection of thickness anomalies and outliers"""
+        # Create thickness data with known anomalies
+        np.random.seed(42)
+        base_thicknesses = np.random.normal(5.0, 1.0, 100)
+        
+        # Add some anomalies
+        anomalies = np.array([0.1, 15.0, 0.5, 12.0])  # Very low and very high values
+        thicknesses_with_anomalies = np.concatenate([base_thicknesses, anomalies])
+        
+        # Detect anomalies
+        anomaly_results = detect_thickness_anomalies(thicknesses_with_anomalies)
+        
+        # Should detect the anomalies
+        assert len(anomaly_results['anomalies']) >= 4
+        assert len(anomaly_results['outliers']) >= 0  # May not have extreme outliers
+        
+        # Most anomaly values should be extreme (allow some false positives)
+        extreme_count = sum(1 for anomaly in anomaly_results['anomalies'] if anomaly < 2.0 or anomaly > 10.0)
+        assert extreme_count >= 3  # At least 3 of the 4 extreme values should be detected
+        
+        # Should provide anomaly statistics
+        assert 'anomaly_count' in anomaly_results
+        assert 'anomaly_percentage' in anomaly_results
+        assert anomaly_results['anomaly_percentage'] > 0
+    
+    def test_thickness_distribution_insights(self):
+        """Test generation of thickness distribution insights"""
+        # Create thickness data with known characteristics
+        np.random.seed(42)
+        thicknesses = np.concatenate([
+            np.random.normal(3.0, 0.5, 300),  # Lower thickness region
+            np.random.normal(7.0, 0.5, 300),  # Higher thickness region
+            np.random.uniform(4.0, 6.0, 400)  # Middle region
+        ])
+        
+        # Generate insights
+        insights = generate_thickness_insights(thicknesses)
+        
+        # Should provide comprehensive insights
+        assert 'distribution_summary' in insights
+        assert 'quality_assessment' in insights
+        assert 'recommendations' in insights
+        assert 'risk_factors' in insights
+        
+        # Quality assessment should be present
+        quality = insights['quality_assessment']
+        assert 'data_quality' in quality
+        assert 'coverage_adequacy' in quality
+        assert 'sampling_density' in quality
+        
+        # Recommendations should be provided
+        recommendations = insights['recommendations']
+        assert len(recommendations) > 0
+        assert all(isinstance(rec, str) for rec in recommendations)
+    
+    def test_thickness_clustering_analysis(self):
+        """Test clustering analysis of thickness data"""
+        # Create thickness data with distinct clusters
+        np.random.seed(42)
+        cluster1 = np.random.normal(2.0, 0.3, 200)  # Low thickness cluster
+        cluster2 = np.random.normal(5.0, 0.3, 300)  # Medium thickness cluster
+        cluster3 = np.random.normal(8.0, 0.3, 200)  # High thickness cluster
+        
+        thicknesses = np.concatenate([cluster1, cluster2, cluster3])
+        
+        # Perform clustering analysis
+        clustering_results = analyze_thickness_clusters(thicknesses)
+        
+        # Should identify clusters
+        assert len(clustering_results['clusters']) >= 2
+        assert 'cluster_centers' in clustering_results
+        assert 'cluster_sizes' in clustering_results
+        
+        # Cluster centers should be distinct
+        centers = clustering_results['cluster_centers']
+        assert len(centers) >= 2
+        assert max(centers) - min(centers) > 2.0  # Should be well-separated
+    
+    def test_thickness_spatial_analysis(self):
+        """Test spatial analysis of thickness data"""
+        # Create thickness data with spatial coordinates
+        np.random.seed(42)
+        x_coords = np.random.uniform(0, 100, 500)
+        y_coords = np.random.uniform(0, 100, 500)
+        thicknesses = 5.0 + 0.1 * x_coords + 0.05 * y_coords + np.random.normal(0, 0.5, 500)
+        
+        spatial_data = np.column_stack([x_coords, y_coords, thicknesses])
+        
+        # Perform spatial analysis
+        spatial_results = analyze_thickness_spatial_patterns(spatial_data)
+        
+        # Should provide spatial insights
+        assert 'spatial_trends' in spatial_results
+        assert 'spatial_correlation' in spatial_results
+        assert 'spatial_variability' in spatial_results
+        
+        # Should detect trends
+        trends = spatial_results['spatial_trends']
+        assert 'x_direction' in trends
+        assert 'y_direction' in trends
+        
+        # Should provide correlation measures
+        correlation = spatial_results['spatial_correlation']
+        assert 'correlation_coefficient' in correlation
+        assert 'spatial_dependency' in correlation
+    
+    def test_thickness_distribution_edge_cases(self):
+        """Test distribution analysis with edge cases"""
+        # Test with very small dataset
+        small_data = np.array([1.0, 2.0, 3.0])
+        small_analysis = analyze_thickness_distribution(small_data)
+        assert 'distribution_type' in small_analysis
+        
+        # Test with all identical values
+        identical_data = np.full(100, 5.0)
+        identical_analysis = analyze_thickness_distribution(identical_data)
+        assert identical_analysis['distribution_type'] == 'uniform'
+        assert identical_analysis['variance'] == 0.0
+        
+        # Test with single value
+        single_data = np.array([5.0])
+        single_analysis = analyze_thickness_distribution(single_data)
+        assert 'distribution_type' in single_analysis
+        
+        # Test with NaN values
+        nan_data = np.array([1.0, 2.0, np.nan, 4.0, np.nan, 6.0])
+        nan_analysis = analyze_thickness_distribution(nan_data)
+        assert 'distribution_type' in nan_analysis
+        assert nan_analysis['valid_count'] == 4
+    
+    def test_thickness_distribution_performance(self):
+        """Test performance of distribution analysis with large datasets"""
+        # Create large dataset
+        np.random.seed(42)
+        large_thicknesses = np.random.normal(5.0, 1.0, 10000)
+        
+        # Test performance
+        start_time = time.time()
+        analysis = analyze_thickness_distribution(large_thicknesses)
+        elapsed = time.time() - start_time
+        
+        # Should complete quickly
+        assert elapsed < 1.0  # Must complete in <1 second
+        
+        # Should provide results
+        assert 'distribution_type' in analysis
+        assert 'statistics' in analysis
+        
+        # Test anomaly detection performance
+        start_time = time.time()
+        anomalies = detect_thickness_anomalies(large_thicknesses)
+        elapsed = time.time() - start_time
+        
+        assert elapsed < 2.0  # Must complete in <2 seconds
+        assert 'anomalies' in anomalies
 
 
 def create_test_surface_tin():

@@ -520,4 +520,625 @@ def calculate_thickness_statistics(thicknesses: np.ndarray) -> dict:
             'std': np.nan,
             'count': 0,
             'valid_count': 0
-        } 
+        }
+
+
+def analyze_thickness_distribution(thicknesses: np.ndarray) -> dict:
+    """
+    Analyze thickness distribution patterns and characteristics.
+    
+    Args:
+        thicknesses: Array of thickness values
+        
+    Returns:
+        Dictionary with distribution analysis results
+    """
+    try:
+        # Remove NaN values
+        valid_thicknesses = thicknesses[~np.isnan(thicknesses)]
+        valid_count = len(valid_thicknesses)
+        
+        if valid_count == 0:
+            return {
+                'distribution_type': 'unknown',
+                'valid_count': 0,
+                'statistics': {},
+                'peaks': [],
+                'skewness': np.nan,
+                'kurtosis': np.nan,
+                'variance': np.nan
+            }
+        
+        if valid_count == 1:
+            return {
+                'distribution_type': 'single_value',
+                'valid_count': valid_count,
+                'statistics': {'value': valid_thicknesses[0]},
+                'peaks': [valid_thicknesses[0]],
+                'skewness': 0.0,
+                'kurtosis': 0.0,
+                'variance': 0.0
+            }
+        
+        # Calculate basic statistics
+        mean_val = np.mean(valid_thicknesses)
+        std_val = np.std(valid_thicknesses)
+        variance = np.var(valid_thicknesses)
+        
+        # Calculate skewness and kurtosis
+        skewness = _calculate_skewness(valid_thicknesses)
+        kurtosis = _calculate_kurtosis(valid_thicknesses)
+        
+        # Determine distribution type
+        distribution_type = _classify_distribution(valid_thicknesses, skewness, kurtosis, variance)
+        
+        # Find peaks for multimodal distributions
+        peaks = _find_distribution_peaks(valid_thicknesses) if distribution_type == 'multimodal' else []
+        
+        return {
+            'distribution_type': distribution_type,
+            'valid_count': valid_count,
+            'statistics': {
+                'mean': mean_val,
+                'std': std_val,
+                'variance': variance,
+                'min': np.min(valid_thicknesses),
+                'max': np.max(valid_thicknesses),
+                'median': np.median(valid_thicknesses)
+            },
+            'peaks': peaks,
+            'skewness': skewness,
+            'kurtosis': kurtosis,
+            'variance': variance
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing thickness distribution: {e}")
+        return {
+            'distribution_type': 'error',
+            'valid_count': 0,
+            'statistics': {},
+            'peaks': [],
+            'skewness': np.nan,
+            'kurtosis': np.nan,
+            'variance': np.nan
+        }
+
+
+def detect_thickness_anomalies(thicknesses: np.ndarray, method: str = 'iqr') -> dict:
+    """
+    Detect anomalies and outliers in thickness data.
+    
+    Args:
+        thicknesses: Array of thickness values
+        method: Detection method ('iqr', 'zscore', 'isolation_forest')
+        
+    Returns:
+        Dictionary with anomaly detection results
+    """
+    try:
+        # Remove NaN values
+        valid_thicknesses = thicknesses[~np.isnan(thicknesses)]
+        
+        if len(valid_thicknesses) < 3:
+            return {
+                'anomalies': [],
+                'outliers': [],
+                'anomaly_count': 0,
+                'anomaly_percentage': 0.0,
+                'method': method
+            }
+        
+        if method == 'iqr':
+            anomalies, outliers = _detect_anomalies_iqr(valid_thicknesses)
+        elif method == 'zscore':
+            anomalies, outliers = _detect_anomalies_zscore(valid_thicknesses)
+        else:
+            # Default to IQR method
+            anomalies, outliers = _detect_anomalies_iqr(valid_thicknesses)
+        
+        anomaly_count = len(anomalies)
+        anomaly_percentage = (anomaly_count / len(valid_thicknesses)) * 100
+        
+        return {
+            'anomalies': anomalies.tolist() if len(anomalies) > 0 else [],
+            'outliers': outliers.tolist() if len(outliers) > 0 else [],
+            'anomaly_count': anomaly_count,
+            'anomaly_percentage': anomaly_percentage,
+            'method': method
+        }
+        
+    except Exception as e:
+        logger.error(f"Error detecting thickness anomalies: {e}")
+        return {
+            'anomalies': [],
+            'outliers': [],
+            'anomaly_count': 0,
+            'anomaly_percentage': 0.0,
+            'method': method
+        }
+
+
+def analyze_thickness_clusters(thicknesses: np.ndarray, max_clusters: int = 5) -> dict:
+    """
+    Perform clustering analysis on thickness data.
+    
+    Args:
+        thicknesses: Array of thickness values
+        max_clusters: Maximum number of clusters to consider
+        
+    Returns:
+        Dictionary with clustering results
+    """
+    try:
+        # Remove NaN values
+        valid_thicknesses = thicknesses[~np.isnan(thicknesses)]
+        
+        if len(valid_thicknesses) < 3:
+            return {
+                'clusters': [],
+                'cluster_centers': [],
+                'cluster_sizes': [],
+                'optimal_clusters': 1
+            }
+        
+        # Reshape for clustering
+        data = valid_thicknesses.reshape(-1, 1)
+        
+        # Use K-means clustering
+        from sklearn.cluster import KMeans
+        from sklearn.metrics import silhouette_score
+        
+        # Find optimal number of clusters
+        best_score = -1
+        optimal_clusters = 1
+        
+        for n_clusters in range(2, min(max_clusters + 1, len(valid_thicknesses))):
+            kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+            cluster_labels = kmeans.fit_predict(data)
+            
+            if len(np.unique(cluster_labels)) > 1:
+                score = silhouette_score(data, cluster_labels)
+                if score > best_score:
+                    best_score = score
+                    optimal_clusters = n_clusters
+        
+        # Perform clustering with optimal number
+        kmeans = KMeans(n_clusters=optimal_clusters, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(data)
+        
+        # Extract cluster information
+        clusters = []
+        cluster_centers = kmeans.cluster_centers_.flatten().tolist()
+        cluster_sizes = []
+        
+        for i in range(optimal_clusters):
+            cluster_mask = cluster_labels == i
+            cluster_data = valid_thicknesses[cluster_mask]
+            clusters.append(cluster_data.tolist())
+            cluster_sizes.append(len(cluster_data))
+        
+        return {
+            'clusters': clusters,
+            'cluster_centers': cluster_centers,
+            'cluster_sizes': cluster_sizes,
+            'optimal_clusters': optimal_clusters,
+            'silhouette_score': best_score
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing thickness clusters: {e}")
+        return {
+            'clusters': [],
+            'cluster_centers': [],
+            'cluster_sizes': [],
+            'optimal_clusters': 1
+        }
+
+
+def analyze_thickness_spatial_patterns(spatial_data: np.ndarray) -> dict:
+    """
+    Analyze spatial patterns in thickness data.
+    
+    Args:
+        spatial_data: Array of [x, y, thickness] coordinates
+        
+    Returns:
+        Dictionary with spatial analysis results
+    """
+    try:
+        if len(spatial_data) < 3:
+            return {
+                'spatial_trends': {},
+                'spatial_correlation': {},
+                'spatial_variability': {}
+            }
+        
+        x_coords = spatial_data[:, 0]
+        y_coords = spatial_data[:, 1]
+        thicknesses = spatial_data[:, 2]
+        
+        # Remove NaN values
+        valid_mask = ~np.isnan(thicknesses)
+        x_valid = x_coords[valid_mask]
+        y_valid = y_coords[valid_mask]
+        thicknesses_valid = thicknesses[valid_mask]
+        
+        if len(thicknesses_valid) < 3:
+            return {
+                'spatial_trends': {},
+                'spatial_correlation': {},
+                'spatial_variability': {}
+            }
+        
+        # Calculate spatial trends
+        x_trend = np.polyfit(x_valid, thicknesses_valid, 1)[0] if len(x_valid) > 1 else 0
+        y_trend = np.polyfit(y_valid, thicknesses_valid, 1)[0] if len(y_valid) > 1 else 0
+        
+        # Calculate spatial variability
+        spatial_variance = np.var(thicknesses_valid)
+        spatial_range = np.max(thicknesses_valid) - np.min(thicknesses_valid)
+        
+        # Calculate simple spatial correlation (distance-based)
+        spatial_correlation = _calculate_spatial_correlation(x_valid, y_valid, thicknesses_valid)
+        
+        return {
+            'spatial_trends': {
+                'x_direction': x_trend,
+                'y_direction': y_trend,
+                'overall_trend': np.sqrt(x_trend**2 + y_trend**2)
+            },
+            'spatial_correlation': {
+                'correlation_coefficient': spatial_correlation,
+                'spatial_dependency': 'high' if abs(spatial_correlation) > 0.5 else 'low'
+            },
+            'spatial_variability': {
+                'variance': spatial_variance,
+                'range': spatial_range,
+                'coefficient_of_variation': spatial_variance / np.mean(thicknesses_valid) if np.mean(thicknesses_valid) > 0 else 0
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error analyzing spatial patterns: {e}")
+        return {
+            'spatial_trends': {},
+            'spatial_correlation': {},
+            'spatial_variability': {}
+        }
+
+
+def generate_thickness_insights(thicknesses: np.ndarray) -> dict:
+    """
+    Generate comprehensive insights about thickness distribution.
+    
+    Args:
+        thicknesses: Array of thickness values
+        
+    Returns:
+        Dictionary with insights and recommendations
+    """
+    try:
+        # Get distribution analysis
+        distribution = analyze_thickness_distribution(thicknesses)
+        
+        # Get anomaly detection
+        anomalies = detect_thickness_anomalies(thicknesses)
+        
+        # Get clustering analysis
+        clusters = analyze_thickness_clusters(thicknesses)
+        
+        # Generate quality assessment
+        quality_assessment = _assess_data_quality(thicknesses, distribution, anomalies)
+        
+        # Generate recommendations
+        recommendations = _generate_recommendations(distribution, anomalies, clusters)
+        
+        # Identify risk factors
+        risk_factors = _identify_risk_factors(distribution, anomalies)
+        
+        return {
+            'distribution_summary': {
+                'type': distribution['distribution_type'],
+                'statistics': distribution['statistics'],
+                'characteristics': {
+                    'skewness': distribution['skewness'],
+                    'kurtosis': distribution['kurtosis'],
+                    'variance': distribution['variance']
+                }
+            },
+            'quality_assessment': quality_assessment,
+            'recommendations': recommendations,
+            'risk_factors': risk_factors,
+            'anomaly_summary': {
+                'count': anomalies['anomaly_count'],
+                'percentage': anomalies['anomaly_percentage'],
+                'method': anomalies['method']
+            },
+            'clustering_summary': {
+                'optimal_clusters': clusters['optimal_clusters'],
+                'cluster_centers': clusters['cluster_centers']
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating thickness insights: {e}")
+        return {
+            'distribution_summary': {},
+            'quality_assessment': {},
+            'recommendations': ['Error occurred during analysis'],
+            'risk_factors': []
+        }
+
+
+# Helper functions for distribution analysis
+
+def _calculate_skewness(data: np.ndarray) -> float:
+    """Calculate skewness of data."""
+    try:
+        if len(data) < 3:
+            return 0.0
+        mean_val = np.mean(data)
+        std_val = np.std(data)
+        if std_val == 0:
+            return 0.0
+        skewness = np.mean(((data - mean_val) / std_val) ** 3)
+        return skewness
+    except:
+        return 0.0
+
+
+def _calculate_kurtosis(data: np.ndarray) -> float:
+    """Calculate kurtosis of data."""
+    try:
+        if len(data) < 4:
+            return 0.0
+        mean_val = np.mean(data)
+        std_val = np.std(data)
+        if std_val == 0:
+            return 0.0
+        kurtosis = np.mean(((data - mean_val) / std_val) ** 4) - 3
+        return kurtosis
+    except:
+        return 0.0
+
+
+def _classify_distribution(data: np.ndarray, skewness: float, kurtosis: float, variance: float) -> str:
+    """Classify the type of distribution."""
+    try:
+        if variance == 0:
+            return 'uniform'
+        
+        # Check for multimodal distribution using histogram with more conservative approach
+        hist, bins = np.histogram(data, bins=min(20, len(data)//10))
+        peaks = _find_peaks_in_histogram(hist)
+        
+        # Only classify as multimodal if we have clear, well-separated peaks
+        if len(peaks) > 1:
+            # Check if peaks are well-separated
+            peak_values = [bins[p] for p in peaks]
+            peak_separation = min(abs(peak_values[i] - peak_values[i-1]) for i in range(1, len(peak_values)))
+            data_range = np.max(data) - np.min(data)
+            
+            # Require peaks to be separated by at least 20% of data range
+            if peak_separation > 0.2 * data_range:
+                return 'multimodal'
+        
+        # Classify based on skewness and kurtosis
+        if abs(skewness) < 0.5 and abs(kurtosis) < 1.0:
+            return 'unimodal'
+        elif abs(skewness) > 1.0:
+            return 'skewed'
+        elif abs(kurtosis) > 2.0:
+            return 'heavy_tailed'
+        else:
+            return 'unimodal'
+            
+    except:
+        return 'unknown'
+
+
+def _find_peaks_in_histogram(hist: np.ndarray) -> list:
+    """Find peaks in histogram."""
+    try:
+        peaks = []
+        for i in range(1, len(hist) - 1):
+            if hist[i] > hist[i-1] and hist[i] > hist[i+1] and hist[i] > np.mean(hist):
+                peaks.append(i)
+        return peaks
+    except:
+        return []
+
+
+def _find_distribution_peaks(data: np.ndarray) -> list:
+    """Find peaks in distribution."""
+    try:
+        hist, bins = np.histogram(data, bins=min(20, len(data)//5))
+        peaks = _find_peaks_in_histogram(hist)
+        peak_values = [bins[p] for p in peaks]
+        return peak_values
+    except:
+        return []
+
+
+def _detect_anomalies_iqr(data: np.ndarray) -> tuple:
+    """Detect anomalies using IQR method."""
+    try:
+        q1 = np.percentile(data, 25)
+        q3 = np.percentile(data, 75)
+        iqr = q3 - q1
+        lower_bound = q1 - 1.5 * iqr
+        upper_bound = q3 + 1.5 * iqr
+        
+        anomalies = data[(data < lower_bound) | (data > upper_bound)]
+        outliers = data[(data < q1 - 3 * iqr) | (data > q3 + 3 * iqr)]
+        
+        return anomalies, outliers
+    except:
+        return np.array([]), np.array([])
+
+
+def _detect_anomalies_zscore(data: np.ndarray, threshold: float = 3.0) -> tuple:
+    """Detect anomalies using Z-score method."""
+    try:
+        mean_val = np.mean(data)
+        std_val = np.std(data)
+        
+        if std_val == 0:
+            return np.array([]), np.array([])
+        
+        z_scores = np.abs((data - mean_val) / std_val)
+        anomalies = data[z_scores > threshold]
+        outliers = data[z_scores > threshold * 2]
+        
+        return anomalies, outliers
+    except:
+        return np.array([]), np.array([])
+
+
+def _calculate_spatial_correlation(x: np.ndarray, y: np.ndarray, values: np.ndarray) -> float:
+    """Calculate simple spatial correlation."""
+    try:
+        if len(values) < 3:
+            return 0.0
+        
+        # Calculate distances and value differences
+        distances = []
+        value_diffs = []
+        
+        for i in range(len(values)):
+            for j in range(i+1, len(values)):
+                dist = np.sqrt((x[i] - x[j])**2 + (y[i] - y[j])**2)
+                value_diff = abs(values[i] - values[j])
+                
+                if dist > 0:
+                    distances.append(dist)
+                    value_diffs.append(value_diff)
+        
+        if len(distances) < 2:
+            return 0.0
+        
+        # Calculate correlation
+        correlation = np.corrcoef(distances, value_diffs)[0, 1]
+        return correlation if not np.isnan(correlation) else 0.0
+        
+    except:
+        return 0.0
+
+
+def _assess_data_quality(thicknesses: np.ndarray, distribution: dict, anomalies: dict) -> dict:
+    """Assess data quality."""
+    try:
+        valid_count = distribution['valid_count']
+        total_count = len(thicknesses)
+        anomaly_percentage = anomalies['anomaly_percentage']
+        
+        # Assess data quality
+        if valid_count / total_count > 0.95:
+            data_quality = 'excellent'
+        elif valid_count / total_count > 0.9:
+            data_quality = 'good'
+        elif valid_count / total_count > 0.8:
+            data_quality = 'fair'
+        else:
+            data_quality = 'poor'
+        
+        # Assess coverage
+        if valid_count > 1000:
+            coverage_adequacy = 'excellent'
+        elif valid_count > 500:
+            coverage_adequacy = 'good'
+        elif valid_count > 100:
+            coverage_adequacy = 'fair'
+        else:
+            coverage_adequacy = 'poor'
+        
+        # Assess sampling density
+        if anomaly_percentage < 5:
+            sampling_density = 'excellent'
+        elif anomaly_percentage < 10:
+            sampling_density = 'good'
+        elif anomaly_percentage < 20:
+            sampling_density = 'fair'
+        else:
+            sampling_density = 'poor'
+        
+        return {
+            'data_quality': data_quality,
+            'coverage_adequacy': coverage_adequacy,
+            'sampling_density': sampling_density,
+            'valid_percentage': (valid_count / total_count) * 100,
+            'anomaly_percentage': anomaly_percentage
+        }
+        
+    except:
+        return {
+            'data_quality': 'unknown',
+            'coverage_adequacy': 'unknown',
+            'sampling_density': 'unknown',
+            'valid_percentage': 0.0,
+            'anomaly_percentage': 0.0
+        }
+
+
+def _generate_recommendations(distribution: dict, anomalies: dict, clusters: dict) -> list:
+    """Generate recommendations based on analysis."""
+    recommendations = []
+    
+    try:
+        # Distribution-based recommendations
+        if distribution['distribution_type'] == 'multimodal':
+            recommendations.append("Consider analyzing different regions separately due to multimodal distribution")
+        
+        if abs(distribution['skewness']) > 1.0:
+            recommendations.append("Distribution is skewed - consider log transformation for analysis")
+        
+        # Anomaly-based recommendations
+        if anomalies['anomaly_percentage'] > 10:
+            recommendations.append("High anomaly rate detected - review data collection methods")
+        
+        if anomalies['anomaly_count'] > 0:
+            recommendations.append("Investigate anomalies for potential measurement errors or geological features")
+        
+        # Clustering-based recommendations
+        if clusters['optimal_clusters'] > 1:
+            recommendations.append(f"Data shows {clusters['optimal_clusters']} distinct thickness regions")
+        
+        # Quality-based recommendations
+        if distribution['valid_count'] < 100:
+            recommendations.append("Consider increasing sampling density for better statistical reliability")
+        
+        if not recommendations:
+            recommendations.append("Data quality appears good - proceed with standard analysis")
+            
+    except:
+        recommendations.append("Unable to generate recommendations due to analysis error")
+    
+    return recommendations
+
+
+def _identify_risk_factors(distribution: dict, anomalies: dict) -> list:
+    """Identify potential risk factors."""
+    risk_factors = []
+    
+    try:
+        # High variance indicates potential instability
+        if distribution['variance'] > 10:
+            risk_factors.append("High thickness variability may indicate unstable conditions")
+        
+        # High anomaly rate
+        if anomalies['anomaly_percentage'] > 15:
+            risk_factors.append("High anomaly rate suggests potential measurement or geological issues")
+        
+        # Extreme values
+        if distribution['statistics']['max'] > 20 or distribution['statistics']['min'] < 0.1:
+            risk_factors.append("Extreme thickness values detected - verify measurements")
+        
+        # Insufficient data
+        if distribution['valid_count'] < 50:
+            risk_factors.append("Limited data may affect analysis reliability")
+            
+    except:
+        risk_factors.append("Unable to assess risk factors due to analysis error")
+    
+    return risk_factors 
