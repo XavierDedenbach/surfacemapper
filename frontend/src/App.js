@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import './App.css';
 import InputForms from './components/InputForms';
 import ThreeDViewer from './components/ThreeDViewer';
+import DataTable from './components/DataTable';
 import backendApi from './api/backendApi'; // Adjusted path if necessary
 
 function App() {
   const [wizardStep, setWizardStep] = useState(0); // 0: setup, 1: loading, 2: results
   const [error, setError] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
+  const [tonnageParams, setTonnageParams] = useState([]);
 
   // State for the InputForms component
   const [surfaces, setSurfaces] = useState([]);
@@ -62,10 +64,37 @@ function App() {
       },
     };
 
+    setTonnageParams(formData.params.tonnage_per_layer);
+
     try {
-      const result = await backendApi.startAnalysis(formData);
-      setAnalysisResult(result);
-      setWizardStep(2);
+      const initialResponse = await backendApi.startAnalysis(formData);
+      const { analysis_id } = initialResponse;
+
+      if (!analysis_id) {
+        throw new Error("Did not receive an analysis ID from the server.");
+      }
+
+      // Poll for results
+      const pollForResults = async () => {
+        try {
+          const result = await backendApi.getAnalysisResults(analysis_id);
+          if (result.status === 'completed') {
+            setAnalysisResult(result);
+            setWizardStep(2);
+          } else if (result.status === 'failed') {
+            throw new Error(result.error_message || 'Analysis failed on the server.');
+          } else {
+            // If still processing, poll again after a delay
+            setTimeout(pollForResults, 3000); // Poll every 3 seconds
+          }
+        } catch (err) {
+          setError(err);
+          setWizardStep(2);
+        }
+      };
+
+      setTimeout(pollForResults, 1000);
+
     } catch (err) {
       setError(err);
       setWizardStep(2);
@@ -101,8 +130,13 @@ function App() {
           );
         }
         return (
-          <div>
-            <ThreeDViewer analysisResult={analysisResult} onBack={handleReturnToSetup} />
+          <div className="flex flex-col h-[calc(100vh-120px)]">
+            <div className="flex-grow h-4/5">
+                <ThreeDViewer analysisResult={analysisResult} onBack={handleReturnToSetup} />
+            </div>
+            <div className="flex-none h-1/5 bg-white p-4 overflow-auto">
+                <DataTable analysisResult={analysisResult} tonnages={tonnageParams} />
+            </div>
           </div>
         );
       case 0:

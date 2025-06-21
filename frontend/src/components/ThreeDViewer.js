@@ -7,11 +7,13 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
  * Renders surfaces stacked vertically according to their Z-coordinates
  */
 const ThreeDViewer = ({ 
-  surfaces, 
-  analysisBoundary, 
+  analysisResult,
   onPointHover, 
   selectedSurfaces
 }) => {
+  const surfaces = analysisResult?.results?.surfaces || [];
+  const analysisBoundary = analysisResult?.results?.analysis_boundary || null;
+
   // Validate props
   const data = {
     surfaces: Array.isArray(surfaces) ? surfaces : [],

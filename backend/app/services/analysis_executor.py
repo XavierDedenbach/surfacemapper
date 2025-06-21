@@ -38,7 +38,7 @@ class AnalysisExecutor:
         return {
             "status": "started",
             "estimated_duration": job["estimated_duration"],
-            "job_id": analysis_id
+            "analysis_id": analysis_id
         }
 
     def _run_analysis(self, analysis_id: str):

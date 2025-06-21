@@ -75,6 +75,30 @@ This application will utilize a Python backend for all heavy-duty data processin
 ### 6.1. Surface Data Ingestion
 **FR-S1.1**: The system shall allow users to upload or specify the file paths for 1 to 4 .ply surface files.
 
+**FR-S1.1.1. Configuration File Upload**: To streamline setup, the system shall allow the user to upload a JSON file to pre-populate analysis parameters. The file must adhere to the following structure:
+```json
+{
+  "layer_0": {
+    "tonnage": 100,
+    "georeference": {
+      "wgs84_lat": 37.774900,
+      "wgs84_lon": -122.419400,
+      "scaling_factor": 1.0,
+      "orientation_degrees": 90
+    }
+  },
+  "analysis_boundary": {
+    "coordinates": [
+      { "lat": 37.773530, "lon": -122.421130 },
+      { "lat": 37.773530, "lon": -122.417670 },
+      { "lat": 37.776270, "lon": -122.417670 },
+      { "lat": 37.776270, "lon": -122.421130 }
+    ]
+  }
+}
+```
+Uploading this file will populate the tonnage, georeferencing parameters for the first layer, and the analysis boundary coordinates.
+
 **FR-S1.2**: The backend shall validate that the provided files are valid .ply format and contain sufficient data (vertices, faces if applicable).
 
 **FR-S1.3**: The system shall require at least two surfaces for analysis. If only one .ply file is provided, the user must select the option to generate a "base level" surface (FR-S2.1) to fulfill this requirement. If neither a second .ply file nor the base level option is selected, the system shall prompt the user and prevent further processing.

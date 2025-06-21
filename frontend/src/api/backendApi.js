@@ -55,6 +55,11 @@ const backendApi = {
       }
     }
   },
+
+  getAnalysisResults: async (jobId) => {
+    const response = await api.get(`/api/analysis/${jobId}/results`);
+    return response.data;
+  },
 };
 
 // Request interceptor for logging and authentication
@@ -106,14 +111,6 @@ export const processSurfaces = async (processingRequest) => {
  */
 export const getProcessingStatus = async (jobId) => {
   const response = await api.get(`/api/analysis/${jobId}/status`);
-  return response.data;
-};
-
-/**
- * Get analysis results
- */
-export const getAnalysisResults = async (jobId) => {
-  const response = await api.get(`/api/analysis/${jobId}/results`);
   return response.data;
 };
 

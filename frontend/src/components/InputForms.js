@@ -24,6 +24,35 @@ const InputForms = ({
   setAnalysisBoundary,
 }) => {
 
+  const handleConfigUpload = async (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        try {
+            const config = JSON.parse(event.target.result);
+            
+            if (config.layer_0) {
+                if (config.layer_0.georeference) {
+                    const newGeorefParams = [...georeferenceParams];
+                    newGeorefParams[0] = { ...newGeorefParams[0], ...config.layer_0.georeference };
+                    setGeoreferenceParams(newGeorefParams);
+                }
+                if (config.layer_0.tonnage != null) {
+                    setTonnages({ ...tonnages, '0': config.layer_0.tonnage });
+                }
+            }
+
+            if (config.analysis_boundary && config.analysis_boundary.coordinates) {
+                setAnalysisBoundary({ coordinates: config.analysis_boundary.coordinates });
+            }
+
+        } catch (error) {
+            alert('Failed to parse configuration file: ' + error.message);
+        }
+    };
+    reader.readAsText(file);
+  };
+
   const handleFileUpload = async (file, index) => {
     if (!file) return;
     try {
@@ -47,7 +76,8 @@ const InputForms = ({
 
   const handleBoundaryChange = (index, field, value) => {
     const newCoordinates = [...analysisBoundary.coordinates];
-    newCoordinates[index] = { ...newCoordinates[index], [field]: value };
+    const parsedValue = value ? parseFloat(value) : null;
+    newCoordinates[index] = { ...newCoordinates[index], [field]: parsedValue };
     setAnalysisBoundary({ coordinates: newCoordinates });
   };
 
@@ -106,6 +136,12 @@ const InputForms = ({
           <div className="space-y-6">
             <div>
               <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">Project Setup</h2>
+              <div className="mt-4">
+                  <label htmlFor="config-file" className="block text-sm font-medium text-gray-700">
+                    Upload Configuration (.json)
+                  </label>
+                  <input type="file" id="config-file" accept=".json" onChange={(e) => handleConfigUpload(e.target.files[0])} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
+              </div>
             </div>
             <div className="mb-4">
               <label htmlFor="numLayers" className="block text-sm font-medium text-gray-700">
@@ -183,6 +219,19 @@ const InputForms = ({
                   <input type="file" id={`surface-file-${i}`} accept=".ply" onChange={(e) => handleFileUpload(e.target.files[0], i)} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
                   {surfaces[i] && <span className="text-sm text-green-600">Uploaded: {surfaces[i].file.name}</span>}
                 </div>
+                
+                {!generateBaseline && (
+                    <div className="mt-4">
+                        <label htmlFor={`tonnage-${i}`} className="block text-sm font-medium text-gray-700">Tonnage</label>
+                        <input
+                            type="number"
+                            id={`tonnage-${i}`}
+                            value={tonnages[i] || ''}
+                            onChange={(e) => setTonnages({ ...tonnages, [i]: parseFloat(e.target.value) || 0 })}
+                            className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                        />
+                    </div>
+                )}
 
                 {/* Georeferencing */}
                 <div className="mt-4 grid grid-cols-2 gap-4">
@@ -203,16 +252,6 @@ const InputForms = ({
                         <input type="number" step="any" value={georeferenceParams[i]?.scaling_factor || '1.0'} onChange={(e) => handleGeoreferenceChange(i, 'scaling_factor', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
                     </div>
                 </div>
-
-                {/* Tonnage Input */}
-                {i > 0 && !generateBaseline && (
-                  <div className="mt-4">
-                    <label htmlFor={`tonnage-${i}`} className="block text-sm font-medium text-gray-700">
-                      Tonnage for Layer {i}
-                    </label>
-                    <input type="number" id={`tonnage-${i}`} value={tonnages[i] || ''} onChange={(e) => setTonnages({ ...tonnages, [i]: parseFloat(e.target.value) || 0 })} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
-                  </div>
-                )}
               </div>
             ))}
           </div>

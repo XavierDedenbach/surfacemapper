@@ -9,7 +9,9 @@ const DataTable = ({
   thicknessResults, 
   compactionResults, 
   onSurfaceSelection,
-  selectedSurfaces 
+  selectedSurfaces,
+  analysisResult,
+  tonnages
 }) => {
   // Validate props
   const data = {
@@ -26,6 +28,10 @@ const DataTable = ({
   const [activeTab, setActiveTab] = useState('volume');
   const [sortField, setSortField] = useState('layer_designation');
   const [sortDirection, setSortDirection] = useState('asc');
+
+  const results = analysisResult?.results;
+  const thicknessData = results?.thickness_results || [];
+  const compactionData = results?.compaction_results || [];
 
   // Handle sort with validation
   const handleSort = (field) => {
@@ -76,6 +82,11 @@ const DataTable = ({
     if (layerDesignation && callbacks.onSurfaceSelection) {
       callbacks.onSurfaceSelection(layerDesignation);
     }
+  };
+
+  const getTonnageForLayer = (layerIndex) => {
+    const tonnageInfo = tonnages.find(t => t.layer_index === layerIndex);
+    return tonnageInfo ? tonnageInfo.tonnage : 'N/A';
   };
 
   const renderVolumeTable = () => (
@@ -159,18 +170,18 @@ const DataTable = ({
           </tr>
         </thead>
         <tbody>
-          {sortData(data.thicknessResults).map((result, index) => (
+          {sortData(thicknessData).map((layer, index) => (
             <tr 
               key={index}
-              className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
-              onClick={() => handleSurfaceClick(result.layer_designation)}
+              className={callbacks.selectedSurfaces?.includes(layer.layer_name) ? 'selected' : ''}
+              onClick={() => handleSurfaceClick(layer.layer_name)}
             >
-              <td>{result.layer_designation}</td>
-              <td>{formatNumber(result.average_thickness_feet)}</td>
-              <td>{formatNumber(result.min_thickness_feet)}</td>
-              <td>{formatNumber(result.max_thickness_feet)}</td>
+              <td>{layer.layer_name}</td>
+              <td>{formatNumber(layer.average_thickness?.toFixed(3))}</td>
+              <td>{formatNumber(layer.min_thickness?.toFixed(3))}</td>
+              <td>{formatNumber(layer.max_thickness?.toFixed(3))}</td>
               <td>
-                {formatNumber(result.confidence_interval[0])} - {formatNumber(result.confidence_interval[1])}
+                {formatNumber(layer.confidence_interval[0]?.toFixed(3))} - {formatNumber(layer.confidence_interval[1]?.toFixed(3))}
               </td>
             </tr>
           ))}
@@ -206,7 +217,7 @@ const DataTable = ({
           </tr>
         </thead>
         <tbody>
-          {sortData(data.compactionResults).map((result, index) => (
+          {sortData(compactionData).map((result, index) => (
             <tr 
               key={index}
               className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
@@ -264,6 +275,10 @@ const DataTable = ({
       </div>
     );
   };
+
+  if (!results) {
+    return <p>No analysis results available.</p>;
+  }
 
   return (
     <div className="data-table-container">
