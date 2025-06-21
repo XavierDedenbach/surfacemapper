@@ -3,8 +3,11 @@ Volume and thickness calculation service using PyVista algorithms
 """
 import numpy as np
 import pyvista as pv
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
+import logging
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class VolumeResult:
@@ -131,3 +134,559 @@ class VolumeCalculator:
         if volume_cubic_yards <= 0:
             return 0.0
         return (tonnage * 2000) / volume_cubic_yards 
+
+def calculate_volume_between_surfaces(
+    bottom_surface: np.ndarray, 
+    top_surface: np.ndarray,
+    method: str = "pyvista"
+) -> float:
+    """
+    Calculate volume between two surfaces using PyVista mesh operations.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface [N, 3]
+        top_surface: 3D points representing top surface [N, 3]
+        method: Calculation method ("pyvista" or "prism")
+        
+    Returns:
+        Volume in cubic units (same units as input coordinates)
+        
+    Raises:
+        ValueError: If surfaces have different number of points or invalid data
+    """
+    if len(bottom_surface) != len(top_surface):
+        raise ValueError("Bottom and top surfaces must have same number of points")
+    
+    if len(bottom_surface) < 3:
+        logger.warning("Surfaces have fewer than 3 points, returning 0 volume")
+        return 0.0
+    
+    if method == "pyvista":
+        return _calculate_volume_pyvista(bottom_surface, top_surface)
+    elif method == "prism":
+        return _calculate_volume_prism_method(bottom_surface, top_surface)
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+
+def _calculate_volume_pyvista(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
+    """
+    Calculate volume using PyVista mesh operations.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface [N, 3]
+        top_surface: 3D points representing top surface [N, 3]
+        
+    Returns:
+        Volume in cubic units
+    """
+    try:
+        # Check for pyramid-like cases first (all top points at same X,Y location)
+        if _is_pyramid_case(bottom_surface, top_surface):
+            logger.info("Pyramid case detected, using analytical calculation")
+            return _calculate_pyramid_volume(bottom_surface, top_surface)
+        
+        # Check for other degenerate cases
+        if _is_degenerate_surface(bottom_surface) or _is_degenerate_surface(top_surface):
+            logger.info("Degenerate surface detected, using prism method")
+            return _calculate_volume_prism_method(bottom_surface, top_surface)
+        
+        # Create PyVista point clouds
+        bottom_cloud = pv.PolyData(bottom_surface.astype(np.float32))
+        top_cloud = pv.PolyData(top_surface.astype(np.float32))
+        
+        # Create meshes from point clouds using Delaunay triangulation
+        bottom_mesh = bottom_cloud.delaunay_2d()
+        top_mesh = top_cloud.delaunay_2d()
+        
+        # Check if triangulation was successful
+        if bottom_mesh.n_cells == 0 or top_mesh.n_cells == 0:
+            logger.warning("Delaunay triangulation failed, falling back to prism method")
+            return _calculate_volume_prism_method(bottom_surface, top_surface)
+        
+        # Use improved prism method for better accuracy
+        return _calculate_volume_improved_prism(bottom_surface, top_surface)
+        
+    except Exception as e:
+        logger.error(f"PyVista volume calculation failed: {e}")
+        logger.info("Falling back to prism method")
+        return _calculate_volume_prism_method(bottom_surface, top_surface)
+
+
+def _is_degenerate_surface(surface_points: np.ndarray) -> bool:
+    """
+    Check if surface is degenerate (all points at same X,Y location).
+    
+    Args:
+        surface_points: 3D points representing surface
+        
+    Returns:
+        True if surface is degenerate
+    """
+    if len(surface_points) < 3:
+        return True
+    
+    # Check if all X,Y coordinates are the same
+    x_unique = np.unique(surface_points[:, 0])
+    y_unique = np.unique(surface_points[:, 1])
+    
+    return len(x_unique) == 1 and len(y_unique) == 1
+
+
+def _is_pyramid_case(bottom_surface: np.ndarray, top_surface: np.ndarray) -> bool:
+    """
+    Check if this is a pyramid case (all top points at same X,Y location).
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface
+        top_surface: 3D points representing top surface
+        
+    Returns:
+        True if this is a pyramid case
+    """
+    # Check if all top surface points have the same X,Y coordinates
+    x_unique = np.unique(top_surface[:, 0])
+    y_unique = np.unique(top_surface[:, 1])
+    
+    is_pyramid = len(x_unique) == 1 and len(y_unique) == 1
+    
+    if is_pyramid:
+        logger.info(f"Pyramid case detected: apex at ({x_unique[0]}, {y_unique[0]})")
+    else:
+        logger.debug(f"Not a pyramid case: {len(x_unique)} unique X values, {len(y_unique)} unique Y values")
+    
+    return is_pyramid
+
+
+def _calculate_pyramid_volume(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
+    """
+    Calculate volume for pyramid case using analytical formula.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface
+        top_surface: 3D points representing top surface
+        
+    Returns:
+        Volume in cubic units
+    """
+    # Calculate base area using triangulation
+    try:
+        cloud = pv.PolyData(bottom_surface.astype(np.float32))
+        mesh = cloud.delaunay_2d()
+        
+        if mesh.n_cells == 0:
+            # Fallback to bounding box area
+            x_range = np.max(bottom_surface[:, 0]) - np.min(bottom_surface[:, 0])
+            y_range = np.max(bottom_surface[:, 1]) - np.min(bottom_surface[:, 1])
+            base_area = x_range * y_range
+        else:
+            # Calculate total area of triangulated base
+            base_area = mesh.compute_cell_sizes()['Area'].sum()
+        
+        # Calculate height (distance from base to apex)
+        apex_z = top_surface[0, 2]  # All top points have same Z
+        base_z = np.mean(bottom_surface[:, 2])  # Average base Z
+        height = abs(apex_z - base_z)
+        
+        # Pyramid volume = (1/3) * base_area * height
+        volume = (1/3) * base_area * height
+        
+        return volume
+        
+    except Exception as e:
+        logger.warning(f"Pyramid volume calculation failed: {e}")
+        return _calculate_volume_prism_method(bottom_surface, top_surface)
+
+
+def _calculate_volume_improved_prism(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
+    """
+    Calculate volume using improved prism method with better area estimation.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface [N, 3]
+        top_surface: 3D points representing top surface [N, 3]
+        
+    Returns:
+        Volume in cubic units
+    """
+    # Calculate vertical distances (thickness) at each point
+    thicknesses = np.abs(top_surface[:, 2] - bottom_surface[:, 2])
+    
+    # For regular grids, calculate area per point more accurately
+    if len(bottom_surface) > 1:
+        # Try to detect if this is a regular grid
+        if _is_regular_grid(bottom_surface):
+            volume = _calculate_volume_triangle_based(bottom_surface, top_surface)
+        else:
+            # For irregular grids, use triangulation-based volume calculation
+            volume = _calculate_volume_triangle_based(bottom_surface, top_surface)
+    else:
+        # Single point case
+        volume = thicknesses[0] if len(thicknesses) > 0 else 0.0
+    
+    return volume
+
+
+def _calculate_volume_triangle_based(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
+    """
+    Calculate volume using triangle-based method for regular grids.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface [N, 3]
+        top_surface: 3D points representing top surface [N, 3]
+        
+    Returns:
+        Volume in cubic units
+    """
+    try:
+        # Create PyVista point cloud and triangulate
+        cloud = pv.PolyData(bottom_surface.astype(np.float32))
+        mesh = cloud.delaunay_2d()
+        
+        if mesh.n_cells == 0:
+            # Fallback to simple prism method
+            return _calculate_volume_prism_method(bottom_surface, top_surface)
+        
+        total_volume = 0.0
+        
+        # For each triangle, calculate the prism volume
+        for i in range(mesh.n_cells):
+            # Get triangle vertices
+            triangle = mesh.get_cell(i)
+            triangle_points = triangle.points
+            
+            # Find corresponding points in the surface arrays
+            bottom_triangle_points = np.zeros_like(triangle_points)
+            top_triangle_points = np.zeros_like(triangle_points)
+            
+            for j, point in enumerate(triangle_points):
+                # Find closest point in bottom surface
+                distances = np.sqrt(
+                    (bottom_surface[:, 0] - point[0])**2 + 
+                    (bottom_surface[:, 1] - point[1])**2
+                )
+                closest_idx = np.argmin(distances)
+                bottom_triangle_points[j] = bottom_surface[closest_idx]
+                top_triangle_points[j] = top_surface[closest_idx]
+            
+            # Calculate triangle area
+            v1 = bottom_triangle_points[1] - bottom_triangle_points[0]
+            v2 = bottom_triangle_points[2] - bottom_triangle_points[0]
+            cross_product = np.cross(v1, v2)
+            triangle_area = 0.5 * np.linalg.norm(cross_product)
+            
+            # Calculate average thickness at triangle vertices
+            avg_thickness = np.mean(np.abs(
+                top_triangle_points[:, 2] - bottom_triangle_points[:, 2]
+            ))
+            
+            # Volume = area * average thickness
+            triangle_volume = triangle_area * avg_thickness
+            total_volume += triangle_volume
+        
+        return total_volume
+        
+    except Exception as e:
+        logger.warning(f"Triangle-based volume calculation failed: {e}")
+        return _calculate_volume_prism_method(bottom_surface, top_surface)
+
+
+def _is_regular_grid(surface_points: np.ndarray) -> bool:
+    """
+    Check if surface points form a regular grid.
+    
+    Args:
+        surface_points: 3D points representing surface
+        
+    Returns:
+        True if points form a regular grid
+    """
+    if len(surface_points) < 4:
+        return False
+    
+    # Extract X and Y coordinates
+    x_coords = surface_points[:, 0]
+    y_coords = surface_points[:, 1]
+    
+    # Check if X and Y coordinates are evenly spaced
+    x_unique = np.unique(x_coords)
+    y_unique = np.unique(y_coords)
+    
+    if len(x_unique) < 2 or len(y_unique) < 2:
+        return False
+    
+    # Check if spacing is uniform
+    x_spacing = np.diff(x_unique)
+    y_spacing = np.diff(y_unique)
+    
+    x_uniform = np.allclose(x_spacing, x_spacing[0], atol=1e-10)
+    y_uniform = np.allclose(y_spacing, y_spacing[0], atol=1e-10)
+    
+    return x_uniform and y_uniform
+
+
+def _calculate_regular_grid_area_per_point(surface_points: np.ndarray) -> float:
+    """
+    Calculate area per point for regular grid surfaces.
+    
+    Args:
+        surface_points: 3D points representing regular grid surface
+        
+    Returns:
+        Area per point
+    """
+    x_coords = surface_points[:, 0]
+    y_coords = surface_points[:, 1]
+    
+    x_unique = np.unique(x_coords)
+    y_unique = np.unique(y_coords)
+    
+    # Calculate spacing
+    x_spacing = x_unique[1] - x_unique[0] if len(x_unique) > 1 else 1.0
+    y_spacing = y_unique[1] - y_unique[0] if len(y_unique) > 1 else 1.0
+    
+    return x_spacing * y_spacing
+
+
+def _calculate_irregular_grid_area_per_point(surface_points: np.ndarray) -> float:
+    """
+    Calculate area per point for irregular grid surfaces using triangulation.
+    
+    Args:
+        surface_points: 3D points representing irregular surface
+        
+    Returns:
+        Area per point
+    """
+    try:
+        # Create PyVista point cloud and triangulate
+        cloud = pv.PolyData(surface_points.astype(np.float32))
+        mesh = cloud.delaunay_2d()
+        
+        if mesh.n_cells == 0:
+            # Fallback to bounding box method
+            return _calculate_bounding_box_area_per_point(surface_points)
+        
+        # Calculate total area of triangulated surface
+        total_area = mesh.compute_cell_sizes()['Area'].sum()
+        
+        # Distribute area evenly among points
+        return total_area / len(surface_points)
+        
+    except Exception as e:
+        logger.warning(f"Triangulation-based area calculation failed: {e}")
+        return _calculate_bounding_box_area_per_point(surface_points)
+
+
+def _calculate_bounding_box_area_per_point(surface_points: np.ndarray) -> float:
+    """
+    Calculate area per point using bounding box method.
+    
+    Args:
+        surface_points: 3D points representing surface
+        
+    Returns:
+        Area per point
+    """
+    x_coords = surface_points[:, 0]
+    y_coords = surface_points[:, 1]
+    
+    x_range = np.max(x_coords) - np.min(x_coords)
+    y_range = np.max(y_coords) - np.min(y_coords)
+    total_area = x_range * y_range
+    
+    return total_area / len(surface_points)
+
+
+def _calculate_volume_prism_method(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
+    """
+    Calculate volume using vertical prism method.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface [N, 3]
+        top_surface: 3D points representing top surface [N, 3]
+        
+    Returns:
+        Volume in cubic units
+    """
+    # Calculate vertical distances (thickness) at each point
+    thicknesses = np.abs(top_surface[:, 2] - bottom_surface[:, 2])
+    
+    # For regular grids, calculate area per point and multiply by thickness
+    # This is an approximation that works well for dense, regular grids
+    if len(bottom_surface) > 1:
+        # Estimate area per point based on bounding box
+        x_range = np.max(bottom_surface[:, 0]) - np.min(bottom_surface[:, 0])
+        y_range = np.max(bottom_surface[:, 1]) - np.min(bottom_surface[:, 1])
+        total_area = x_range * y_range
+        area_per_point = total_area / len(bottom_surface)
+        
+        # Calculate volume as sum of prism volumes
+        volume = np.sum(thicknesses * area_per_point)
+    else:
+        # Single point case
+        volume = thicknesses[0] if len(thicknesses) > 0 else 0.0
+    
+    return volume
+
+
+def create_square_grid(size_x: int, size_y: int, z: float = 0.0) -> np.ndarray:
+    """
+    Create a square grid of points at specified Z level.
+    
+    Args:
+        size_x: Number of points in X direction
+        size_y: Number of points in Y direction
+        z: Z coordinate for all points
+        
+    Returns:
+        Array of 3D points [N, 3]
+    """
+    x = np.linspace(0, size_x, size_x + 1)
+    y = np.linspace(0, size_y, size_y + 1)
+    X, Y = np.meshgrid(x, y)
+    points = np.column_stack([X.ravel(), Y.ravel(), np.full(X.size, z)])
+    return points
+
+
+def create_rectangular_grid(length: int, width: int, z: float = 0.0) -> np.ndarray:
+    """
+    Create a rectangular grid of points at specified Z level.
+    
+    Args:
+        length: Length of rectangle
+        width: Width of rectangle
+        z: Z coordinate for all points
+        
+    Returns:
+        Array of 3D points [N, 3]
+    """
+    x = np.linspace(0, length, length + 1)
+    y = np.linspace(0, width, width + 1)
+    X, Y = np.meshgrid(x, y)
+    points = np.column_stack([X.ravel(), Y.ravel(), np.full(X.size, z)])
+    return points
+
+
+def create_sine_wave_surface(amplitude: float = 2.0, wavelength: float = 10.0, size: int = 20) -> np.ndarray:
+    """
+    Create a surface with sine wave variation.
+    
+    Args:
+        amplitude: Amplitude of sine wave
+        wavelength: Wavelength of sine wave
+        size: Size of the surface grid
+        
+    Returns:
+        Array of 3D points [N, 3]
+    """
+    x = np.linspace(0, size, size + 1)
+    y = np.linspace(0, size, size + 1)
+    X, Y = np.meshgrid(x, y)
+    Z = amplitude * np.sin(2 * np.pi * X / wavelength)
+    points = np.column_stack([X.ravel(), Y.ravel(), Z.ravel()])
+    return points
+
+
+def calculate_surface_area(surface_points: np.ndarray) -> float:
+    """
+    Calculate approximate surface area of a point cloud surface.
+    
+    Args:
+        surface_points: 3D points representing surface [N, 3]
+        
+    Returns:
+        Approximate surface area
+    """
+    if len(surface_points) < 3:
+        return 0.0
+    
+    # Simple approximation: bounding box area
+    x_coords = surface_points[:, 0]
+    y_coords = surface_points[:, 1]
+    x_range = np.max(x_coords) - np.min(x_coords)
+    y_range = np.max(y_coords) - np.min(y_coords)
+    return x_range * y_range
+
+
+def validate_surface_data(surface_points: np.ndarray) -> bool:
+    """
+    Validate surface point data.
+    
+    Args:
+        surface_points: 3D points to validate
+        
+    Returns:
+        True if data is valid, False otherwise
+    """
+    if surface_points is None or len(surface_points) == 0:
+        return False
+    
+    if surface_points.ndim != 2 or surface_points.shape[1] != 3:
+        return False
+    
+    if np.any(np.isnan(surface_points)) or np.any(np.isinf(surface_points)):
+        return False
+    
+    return True
+
+
+def optimize_mesh_quality(mesh: pv.PolyData, target_cells: Optional[int] = None) -> pv.PolyData:
+    """
+    Optimize mesh quality for volume calculation.
+    
+    Args:
+        mesh: PyVista mesh to optimize
+        target_cells: Target number of cells (None for auto)
+        
+    Returns:
+        Optimized mesh
+    """
+    try:
+        if target_cells is not None and mesh.n_cells > target_cells:
+            # Decimate mesh to target cell count
+            mesh = mesh.decimate(target=target_cells / mesh.n_cells)
+        
+        # Clean mesh
+        mesh = mesh.clean()
+        
+        # Fill holes if any
+        if mesh.n_holes > 0:
+            mesh = mesh.fill_holes()
+        
+        return mesh
+        
+    except Exception as e:
+        logger.warning(f"Mesh optimization failed: {e}")
+        return mesh 
+
+def calculate_real_surface_area(surface_points: np.ndarray) -> float:
+    """
+    Calculate real surface area using triangulation.
+    
+    Args:
+        surface_points: 3D points representing surface [N, 3]
+        
+    Returns:
+        Real surface area in square units
+    """
+    if len(surface_points) < 3:
+        return 0.0
+    
+    try:
+        # Create PyVista point cloud and triangulate
+        cloud = pv.PolyData(surface_points.astype(np.float32))
+        mesh = cloud.delaunay_2d()
+        
+        if mesh.n_cells == 0:
+            # Fallback to bounding box area
+            return calculate_surface_area(surface_points)
+        
+        # Calculate total area of triangulated surface
+        total_area = mesh.compute_cell_sizes()['Area'].sum()
+        
+        return total_area
+        
+    except Exception as e:
+        logger.warning(f"Real surface area calculation failed: {e}")
+        return calculate_surface_area(surface_points) 
