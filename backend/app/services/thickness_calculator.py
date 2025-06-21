@@ -230,42 +230,270 @@ def _interpolate_z_at_point(point_2d: np.ndarray, surface_tin: Delaunay) -> floa
         return np.nan
 
 
-def _generate_uniform_sample_points(
-    upper_surface: np.ndarray,
-    lower_surface: np.ndarray,
-    spacing: float = 1.0
-) -> np.ndarray:
+def generate_uniform_sample_points(boundary: np.ndarray, sample_spacing: float) -> np.ndarray:
     """
-    Generate uniform sample points for thickness calculation.
+    Generate uniform grid sampling points within boundary.
     
     Args:
-        upper_surface: Upper surface points [N, 3]
-        lower_surface: Lower surface points [M, 3]
-        spacing: Sample point spacing
+        boundary: Boundary polygon vertices [N, 2]
+        sample_spacing: Spacing between sample points
         
     Returns:
         Sample points [K, 2]
     """
     try:
-        # Calculate bounding box from both surfaces
-        all_points = np.vstack([upper_surface[:, :2], lower_surface[:, :2]])
+        if len(boundary) < 3:
+            # Single point or line - return boundary points
+            return boundary
         
-        x_min, y_min = np.min(all_points, axis=0)
-        x_max, y_max = np.max(all_points, axis=0)
+        # Calculate bounding box
+        x_min, y_min = np.min(boundary, axis=0)
+        x_max, y_max = np.max(boundary, axis=0)
         
-        # Generate uniform grid
-        x_coords = np.arange(x_min, x_max + spacing, spacing)
-        y_coords = np.arange(y_min, y_max + spacing, spacing)
+        # Generate uniform grid including boundary points
+        x_coords = np.arange(x_min, x_max + sample_spacing, sample_spacing)
+        y_coords = np.arange(y_min, y_max + sample_spacing, sample_spacing)
         
         X, Y = np.meshgrid(x_coords, y_coords)
-        sample_points = np.column_stack([X.ravel(), Y.ravel()])
+        grid_points = np.column_stack([X.ravel(), Y.ravel()])
         
-        return sample_points
+        # For rectangular boundaries, include all grid points
+        # For irregular boundaries, filter points inside
+        if _is_rectangular_boundary(boundary):
+            return grid_points
+        else:
+            # Filter points inside boundary
+            sample_points = []
+            for point in grid_points:
+                if _is_point_in_polygon(point, boundary):
+                    sample_points.append(point)
+            
+            return np.array(sample_points) if sample_points else boundary[:1]
         
     except Exception as e:
-        logger.error(f"Error generating sample points: {e}")
-        # Return simple grid as fallback
-        return np.array([[0, 0], [1, 0], [0, 1], [1, 1]])
+        logger.error(f"Error generating uniform sample points: {e}")
+        return boundary[:1]  # Return first boundary point as fallback
+
+
+def _is_rectangular_boundary(boundary: np.ndarray) -> bool:
+    """
+    Check if boundary is approximately rectangular.
+    
+    Args:
+        boundary: Boundary polygon vertices [N, 2]
+        
+    Returns:
+        True if boundary is rectangular
+    """
+    try:
+        if len(boundary) != 4:
+            return False
+        
+        # Check if boundary forms a rectangle
+        x_coords = boundary[:, 0]
+        y_coords = boundary[:, 1]
+        
+        # Should have exactly 2 unique x and y values
+        unique_x = np.unique(x_coords)
+        unique_y = np.unique(y_coords)
+        
+        return len(unique_x) == 2 and len(unique_y) == 2
+        
+    except Exception:
+        return False
+
+
+def generate_adaptive_sample_points(
+    surface_points: np.ndarray,
+    boundary: np.ndarray,
+    max_spacing: float,
+    min_spacing: float = 0.1
+) -> np.ndarray:
+    """
+    Generate adaptive sampling points based on surface complexity.
+    
+    Args:
+        surface_points: Surface points [N, 3]
+        boundary: Boundary polygon vertices [M, 2]
+        max_spacing: Maximum spacing between points
+        min_spacing: Minimum spacing between points
+        
+    Returns:
+        Sample points [K, 2]
+    """
+    try:
+        if len(surface_points) < 3:
+            return generate_uniform_sample_points(boundary, max_spacing)
+        
+        # Calculate surface complexity (roughness)
+        complexity = _calculate_surface_complexity(surface_points)
+        
+        # Adjust spacing based on complexity
+        # Higher complexity = smaller spacing
+        adjusted_spacing = max_spacing - (max_spacing - min_spacing) * complexity
+        adjusted_spacing = max(min_spacing, min(max_spacing, adjusted_spacing))
+        
+        # Generate uniform grid with adjusted spacing
+        return generate_uniform_sample_points(boundary, adjusted_spacing)
+        
+    except Exception as e:
+        logger.error(f"Error generating adaptive sample points: {e}")
+        return generate_uniform_sample_points(boundary, max_spacing)
+
+
+def generate_boundary_aware_sample_points(boundary: np.ndarray, sample_spacing: float) -> np.ndarray:
+    """
+    Generate sample points that respect irregular boundaries.
+    
+    Args:
+        boundary: Boundary polygon vertices [N, 2]
+        sample_spacing: Spacing between sample points
+        
+    Returns:
+        Sample points [K, 2]
+    """
+    try:
+        if len(boundary) < 3:
+            return boundary
+        
+        # Use uniform sampling with boundary filtering
+        return generate_uniform_sample_points(boundary, sample_spacing)
+        
+    except Exception as e:
+        logger.error(f"Error generating boundary-aware sample points: {e}")
+        return boundary[:1]
+
+
+def _calculate_surface_complexity(surface_points: np.ndarray) -> float:
+    """
+    Calculate surface complexity/roughness measure.
+    
+    Args:
+        surface_points: Surface points [N, 3]
+        
+    Returns:
+        Complexity measure between 0 (smooth) and 1 (rough)
+    """
+    try:
+        if len(surface_points) < 4:
+            return 0.0
+        
+        # Create TIN for surface
+        from services.triangulation import create_delaunay_triangulation
+        
+        tin = create_delaunay_triangulation(surface_points[:, :2])
+        tin.z_values = surface_points[:, 2]
+        
+        if tin.simplices.size == 0:
+            return 0.0
+        
+        # Calculate surface roughness using triangle gradients
+        gradients = []
+        for simplex in tin.simplices:
+            vertices = surface_points[simplex]
+            if len(vertices) == 3:
+                # Calculate triangle normal
+                v1 = vertices[1] - vertices[0]
+                v2 = vertices[2] - vertices[0]
+                normal = np.cross(v1, v2)
+                normal_magnitude = np.linalg.norm(normal)
+                
+                if normal_magnitude > 0:
+                    # Gradient magnitude (steepness)
+                    gradient = normal_magnitude / (np.linalg.norm(v1) * np.linalg.norm(v2))
+                    gradients.append(gradient)
+        
+        if not gradients:
+            return 0.0
+        
+        # Normalize complexity measure
+        avg_gradient = np.mean(gradients)
+        max_gradient = np.max(gradients)
+        
+        # Return normalized complexity (0-1)
+        complexity = min(1.0, avg_gradient / max_gradient if max_gradient > 0 else 0.0)
+        
+        return complexity
+        
+    except Exception as e:
+        logger.error(f"Error calculating surface complexity: {e}")
+        return 0.5  # Return medium complexity as fallback
+
+
+def _is_point_in_polygon(point: np.ndarray, polygon: np.ndarray) -> bool:
+    """
+    Check if a point is inside a polygon using ray casting algorithm.
+    
+    Args:
+        point: 2D point [x, y]
+        polygon: Polygon vertices [N, 2]
+        
+    Returns:
+        True if point is inside polygon
+    """
+    try:
+        x, y = point
+        n = len(polygon)
+        inside = False
+        
+        p1x, p1y = polygon[0]
+        for i in range(n + 1):
+            p2x, p2y = polygon[i % n]
+            if y > min(p1y, p2y):
+                if y <= max(p1y, p2y):
+                    if x <= max(p1x, p2x):
+                        if p1y != p2y:
+                            xinters = (y - p1y) * (p2x - p1x) / (p2y - p1y) + p1x
+                        if p1x == p2x or x <= xinters:
+                            inside = not inside
+            p1x, p1y = p2x, p2y
+        
+        return inside
+        
+    except Exception as e:
+        logger.error(f"Error checking point in polygon: {e}")
+        return False
+
+
+def optimize_sample_density(
+    surface_points: np.ndarray,
+    boundary: np.ndarray,
+    target_point_count: int,
+    max_spacing: float = 10.0,
+    min_spacing: float = 0.1
+) -> float:
+    """
+    Optimize sample spacing to achieve target point count.
+    
+    Args:
+        surface_points: Surface points [N, 3]
+        boundary: Boundary polygon vertices [M, 2]
+        target_point_count: Desired number of sample points
+        max_spacing: Maximum allowed spacing
+        min_spacing: Minimum allowed spacing
+        
+    Returns:
+        Optimized spacing value
+    """
+    try:
+        # Binary search for optimal spacing
+        left = min_spacing
+        right = max_spacing
+        
+        while right - left > 0.01:  # 1cm tolerance
+            mid = (left + right) / 2
+            sample_points = generate_uniform_sample_points(boundary, mid)
+            
+            if len(sample_points) >= target_point_count:
+                left = mid
+            else:
+                right = mid
+        
+        return left
+        
+    except Exception as e:
+        logger.error(f"Error optimizing sample density: {e}")
+        return max_spacing
 
 
 def calculate_thickness_statistics(thicknesses: np.ndarray) -> dict:
