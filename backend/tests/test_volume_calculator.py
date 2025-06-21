@@ -13,7 +13,8 @@ from services.volume_calculator import (
     create_rectangular_grid,
     create_sine_wave_surface,
     calculate_surface_area,
-    calculate_real_surface_area
+    calculate_real_surface_area,
+    convert_cubic_feet_to_yards
 )
 
 
@@ -259,6 +260,88 @@ class TestVolumeCalculation:
         assert prism_volume > 0
         relative_error = abs(prism_volume - expected_volume) / expected_volume
         assert relative_error < 0.01
+    
+    def test_prism_method_negative_thicknesses(self):
+        """Test prism method with negative thicknesses (top surface below bottom)"""
+        bottom = np.array([[0, 0, 5], [1, 0, 5], [1, 1, 5], [0, 1, 5]])
+        top = np.array([[0, 0, 2], [1, 0, 2], [1, 1, 2], [0, 1, 2]])  # Below bottom surface
+        
+        prism_volume = calculate_volume_between_surfaces(bottom, top, method="prism")
+        
+        # Should handle negative thickness gracefully
+        assert prism_volume >= 0  # May return 0 or absolute value
+    
+    def test_cubic_feet_to_yards_conversion(self):
+        """Test cubic feet to cubic yards conversion accuracy"""
+        # Test known conversion: 27 cubic feet = 1 cubic yard
+        volume_cf = 27.0
+        volume_cy = convert_cubic_feet_to_yards(volume_cf)
+        assert abs(volume_cy - 1.0) < 1e-10
+        
+        # Test various values
+        test_values_cf = [1.0, 27.0, 54.0, 100.0, 1000.0]
+        expected_cy = [v / 27.0 for v in test_values_cf]
+        
+        for cf, expected in zip(test_values_cf, expected_cy):
+            converted = convert_cubic_feet_to_yards(cf)
+            assert abs(converted - expected) < 1e-10
+    
+    def test_conversion_edge_cases(self):
+        """Test unit conversion edge cases"""
+        # Test zero
+        assert convert_cubic_feet_to_yards(0.0) == 0.0
+        
+        # Test very large numbers
+        large_value = 1e9
+        converted = convert_cubic_feet_to_yards(large_value)
+        expected = large_value / 27.0
+        assert abs(converted - expected) / expected < 1e-10
+        
+        # Test very small numbers
+        small_value = 1e-9
+        converted = convert_cubic_feet_to_yards(small_value)
+        expected = small_value / 27.0
+        assert abs(converted - expected) / expected < 1e-10
+    
+    def test_conversion_negative_values(self):
+        """Test unit conversion with negative values"""
+        # Test negative values (should raise error or handle gracefully)
+        with pytest.raises(ValueError):
+            convert_cubic_feet_to_yards(-10.0)
+        
+        # Test negative values with allow_negative=True
+        volume_cy = convert_cubic_feet_to_yards(-27.0, allow_negative=True)
+        assert abs(volume_cy - (-1.0)) < 1e-10
+    
+    def test_conversion_precision(self):
+        """Test conversion precision with various input ranges"""
+        # Test precision with different scales
+        test_cases = [
+            (0.001, 0.001 / 27.0),      # Very small
+            (0.1, 0.1 / 27.0),          # Small
+            (1.0, 1.0 / 27.0),          # Unit
+            (27.0, 1.0),                # Exact conversion
+            (100.0, 100.0 / 27.0),      # Medium
+            (10000.0, 10000.0 / 27.0),  # Large
+            (1e6, 1e6 / 27.0)           # Very large
+        ]
+        
+        for cf, expected_cy in test_cases:
+            converted = convert_cubic_feet_to_yards(cf)
+            relative_error = abs(converted - expected_cy) / expected_cy
+            assert relative_error < 1e-12  # High precision required
+    
+    def test_round_trip_conversion(self):
+        """Test round-trip conversion accuracy"""
+        original_values = [1.0, 27.0, 100.0, 1000.0, 1e6]
+        
+        for original in original_values:
+            # Convert to yards then back to feet
+            yards = convert_cubic_feet_to_yards(original)
+            feet = yards * 27.0  # Convert back
+            
+            # Should be very close to original
+            assert abs(feet - original) / original < 1e-12
 
 
 def create_square_grid(size_x, size_y, z=0):

@@ -689,4 +689,70 @@ def calculate_real_surface_area(surface_points: np.ndarray) -> float:
         
     except Exception as e:
         logger.warning(f"Real surface area calculation failed: {e}")
-        return calculate_surface_area(surface_points) 
+        return calculate_surface_area(surface_points)
+
+
+def convert_cubic_feet_to_yards(volume_cubic_feet: float, allow_negative: bool = False) -> float:
+    """
+    Convert volume from cubic feet to cubic yards.
+    
+    Args:
+        volume_cubic_feet: Volume in cubic feet
+        allow_negative: Whether to allow negative values (default: False)
+        
+    Returns:
+        Volume in cubic yards
+        
+    Raises:
+        ValueError: If volume is negative and allow_negative is False
+    """
+    if not allow_negative and volume_cubic_feet < 0:
+        raise ValueError("Volume cannot be negative")
+    
+    # Conversion factor: 27 cubic feet = 1 cubic yard
+    return volume_cubic_feet / 27.0
+
+
+def convert_cubic_yards_to_feet(volume_cubic_yards: float, allow_negative: bool = False) -> float:
+    """
+    Convert volume from cubic yards to cubic feet.
+    
+    Args:
+        volume_cubic_yards: Volume in cubic yards
+        allow_negative: Whether to allow negative values (default: False)
+        
+    Returns:
+        Volume in cubic feet
+        
+    Raises:
+        ValueError: If volume is negative and allow_negative is False
+    """
+    if not allow_negative and volume_cubic_yards < 0:
+        raise ValueError("Volume cannot be negative")
+    
+    # Conversion factor: 1 cubic yard = 27 cubic feet
+    return volume_cubic_yards * 27.0
+
+
+def validate_volume_units(volume: float, unit: str) -> bool:
+    """
+    Validate volume value and unit.
+    
+    Args:
+        volume: Volume value
+        unit: Unit string ('cubic_feet', 'cubic_yards', etc.)
+        
+    Returns:
+        True if valid, False otherwise
+    """
+    if not isinstance(volume, (int, float)):
+        return False
+    
+    if np.isnan(volume) or np.isinf(volume):
+        return False
+    
+    valid_units = ['cubic_feet', 'cubic_yards', 'cubic_meters']
+    if unit not in valid_units:
+        return False
+    
+    return True 
