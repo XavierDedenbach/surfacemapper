@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 /**
  * DataTable component for displaying analysis results
@@ -26,7 +26,6 @@ const DataTable = ({
   const [activeTab, setActiveTab] = useState('volume');
   const [sortField, setSortField] = useState('layer_designation');
   const [sortDirection, setSortDirection] = useState('asc');
-  const [filterValue, setFilterValue] = useState('');
 
   // Handle sort with validation
   const handleSort = (field) => {
@@ -36,11 +35,6 @@ const DataTable = ({
       setSortField(field);
       setSortDirection('asc');
     }
-  };
-
-  // Handle filter with validation
-  const handleFilter = (value) => {
-    setFilterValue(value || '');
   };
 
   // Sort data with validation
@@ -66,18 +60,6 @@ const DataTable = ({
       }
 
       return 0;
-    });
-  };
-
-  // Filter data with validation
-  const filterData = (dataArray) => {
-    if (!Array.isArray(dataArray) || !filterValue) return dataArray;
-    
-    return dataArray.filter(item => {
-      if (!item) return false;
-      return Object.values(item).some(value => 
-        String(value).toLowerCase().includes(filterValue.toLowerCase())
-      );
     });
   };
 

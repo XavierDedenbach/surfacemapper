@@ -1,308 +1,258 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import backendApi from '../api/backendApi';
 
 /**
  * InputForms component for surface upload and georeferencing
- * Handles the wizard-based workflow for surface data input
+ * This is a "controlled component" that receives all its state and handlers from a parent.
  */
-const InputForms = ({ 
-  onSurfaceUpload, 
-  onGeoreferenceSubmit, 
-  onBoundarySubmit, 
-  onTonnageSubmit, 
-  onComplete 
+const InputForms = ({
+  onWizardComplete,
+  onBack,
+  surfaces,
+  setSurfaces,
+  numLayers,
+  setNumLayers,
+  tonnages,
+  setTonnages,
+  generateBaseline,
+  setGenerateBaseline,
+  baseSurfaceOffset,
+  setBaseSurfaceOffset,
+  georeferenceParams,
+  setGeoreferenceParams,
+  analysisBoundary,
+  setAnalysisBoundary,
 }) => {
-  // Validate props
-  const callbacks = {
-    onSurfaceUpload: onSurfaceUpload || (() => {}),
-    onGeoreferenceSubmit: onGeoreferenceSubmit || (() => {}),
-    onBoundarySubmit: onBoundarySubmit || (() => {}),
-    onTonnageSubmit: onTonnageSubmit || (() => {}),
-    onComplete: onComplete || (() => {})
-  };
 
-  const [currentStep, setCurrentStep] = useState(1);
-  const [surfaceFiles, setSurfaceFiles] = useState([]);
-  const [georeferenceParams, setGeoreferenceParams] = useState([]);
-  const [analysisBoundary, setAnalysisBoundary] = useState({
-    coordinates: [
-      { lat: '', lon: '' },
-      { lat: '', lon: '' },
-      { lat: '', lon: '' },
-      { lat: '', lon: '' }
-    ]
-  });
-  const [tonnageInputs, setTonnageInputs] = useState([]);
-
-  // Validate step boundaries
-  const nextStep = () => {
-    if (currentStep < 5) {
-      setCurrentStep(Math.min(currentStep + 1, 5));
+  const handleFileUpload = async (file, index) => {
+    if (!file) return;
+    try {
+      const response = await backendApi.uploadSurface(file);
+      const newSurfaces = [...surfaces];
+      newSurfaces[index] = { ...response, file };
+      setSurfaces(newSurfaces);
+    } catch (error) {
+      alert(`Upload failed: ${error.message}`);
     }
   };
 
-  const prevStep = () => {
-    if (currentStep > 1) {
-      setCurrentStep(Math.max(currentStep - 1, 1));
-    }
-  };
-
-  // Handle file upload with validation
-  const handleFileUpload = (event) => {
-    const files = Array.from(event.target.files || []);
-    // Validate file types
-    const validFiles = files.filter(file => 
-      file && file.name && file.name.toLowerCase().endsWith('.ply')
-    );
-    setSurfaceFiles(validFiles);
-  };
-
-  // Handle georeference changes with validation
   const handleGeoreferenceChange = (index, field, value) => {
     const updatedParams = [...georeferenceParams];
     if (!updatedParams[index]) {
-      updatedParams[index] = {
-        wgs84_lat: '',
-        wgs84_lon: '',
-        orientation_degrees: '',
-        scaling_factor: '1.0'
-      };
+      updatedParams[index] = {};
     }
-    updatedParams[index][field] = value;
+    updatedParams[index][field] = value ? parseFloat(value) : null;
     setGeoreferenceParams(updatedParams);
   };
 
-  // Handle boundary changes with validation
   const handleBoundaryChange = (index, field, value) => {
-    const updatedBoundary = { ...analysisBoundary };
-    if (updatedBoundary.coordinates[index]) {
-      updatedBoundary.coordinates[index][field] = value;
-      setAnalysisBoundary(updatedBoundary);
+    const newCoordinates = [...analysisBoundary.coordinates];
+    newCoordinates[index] = { ...newCoordinates[index], [field]: value };
+    setAnalysisBoundary({ coordinates: newCoordinates });
+  };
+
+  const canProceed = () => {
+    const requiredSurfaces = generateBaseline ? 1 : numLayers;
+    const uploadedCount = surfaces.filter(s => s).length;
+
+    if (uploadedCount < requiredSurfaces) {
+        return false;
     }
-  };
-
-  // Handle tonnage changes with validation
-  const handleTonnageChange = (index, value) => {
-    const updatedTonnage = [...tonnageInputs];
-    const tonnageValue = parseFloat(value) || 0;
-    updatedTonnage[index] = { layer_index: index, tonnage: tonnageValue };
-    setTonnageInputs(updatedTonnage);
-  };
-
-  // Validate surface count change
-  const handleSurfaceCountChange = (count) => {
-    const validCount = Math.max(1, Math.min(4, parseInt(count) || 1));
-    setSurfaceFiles(new Array(validCount).fill(null));
-    setGeoreferenceParams(new Array(validCount).fill({}));
-  };
-
-  const renderStep1 = () => (
-    <div className="step-container">
-      <h3>Step 1: Project Setup</h3>
-      <div className="form-group">
-        <label>Number of Surfaces:</label>
-        <select 
-          value={surfaceFiles.length} 
-          onChange={(e) => handleSurfaceCountChange(e.target.value)}
-        >
-          <option value={1}>1 Surface</option>
-          <option value={2}>2 Surfaces</option>
-          <option value={3}>3 Surfaces</option>
-          <option value={4}>4 Surfaces</option>
-        </select>
-      </div>
-      <button onClick={nextStep} disabled={surfaceFiles.length === 0}>
-        Next: Surface Upload
-      </button>
-    </div>
-  );
-
-  const renderStep2 = () => (
-    <div className="step-container">
-      <h3>Step 2: Surface Upload</h3>
-      <div className="form-group">
-        <label>Upload PLY Files:</label>
-        <input 
-          type="file" 
-          multiple 
-          accept=".ply"
-          onChange={handleFileUpload}
-        />
-        <div className="file-list">
-          {surfaceFiles.map((file, index) => (
-            <div key={index} className="file-item">
-              {file ? file.name : `Surface ${index + 1} - No file selected`}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="step-buttons">
-        <button onClick={prevStep}>Previous</button>
-        <button onClick={nextStep} disabled={surfaceFiles.length === 0}>
-          Next: Georeferencing
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderStep3 = () => (
-    <div className="step-container">
-      <h3>Step 3: Georeferencing</h3>
-      {surfaceFiles.map((file, index) => (
-        <div key={index} className="surface-georeference">
-          <h4>Surface {index + 1}: {file?.name}</h4>
-          <div className="form-row">
-            <div className="form-group">
-              <label>WGS84 Latitude:</label>
-              <input
-                type="number"
-                step="any"
-                value={georeferenceParams[index]?.wgs84_lat || ''}
-                onChange={(e) => handleGeoreferenceChange(index, 'wgs84_lat', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>WGS84 Longitude:</label>
-              <input
-                type="number"
-                step="any"
-                value={georeferenceParams[index]?.wgs84_lon || ''}
-                onChange={(e) => handleGeoreferenceChange(index, 'wgs84_lon', e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Orientation (degrees):</label>
-              <input
-                type="number"
-                step="any"
-                value={georeferenceParams[index]?.orientation_degrees || ''}
-                onChange={(e) => handleGeoreferenceChange(index, 'orientation_degrees', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Scaling Factor:</label>
-              <input
-                type="number"
-                step="any"
-                value={georeferenceParams[index]?.scaling_factor || '1.0'}
-                onChange={(e) => handleGeoreferenceChange(index, 'scaling_factor', e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
-      ))}
-      <div className="step-buttons">
-        <button onClick={prevStep}>Previous</button>
-        <button onClick={nextStep}>
-          Next: Analysis Boundary
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderStep4 = () => (
-    <div className="step-container">
-      <h3>Step 4: Analysis Boundary</h3>
-      <p>Define rectangular analysis boundary using WGS84 coordinates:</p>
-      <div className="boundary-coordinates">
-        {analysisBoundary.coordinates.map((coord, index) => (
-          <div key={index} className="coordinate-pair">
-            <h5>Point {index + 1}:</h5>
-            <div className="form-row">
-              <div className="form-group">
-                <label>Latitude:</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={coord.lat}
-                  onChange={(e) => handleBoundaryChange(index, 'lat', e.target.value)}
-                />
-              </div>
-              <div className="form-group">
-                <label>Longitude:</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={coord.lon}
-                  onChange={(e) => handleBoundaryChange(index, 'lon', e.target.value)}
-                />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div className="step-buttons">
-        <button onClick={prevStep}>Previous</button>
-        <button onClick={nextStep}>
-          Next: Material Input
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderStep5 = () => (
-    <div className="step-container">
-      <h3>Step 5: Material Input</h3>
-      <p>Enter tonnage for each layer (optional):</p>
-      {Array.from({ length: Math.max(0, surfaceFiles.length - 1) }, (_, index) => (
-        <div key={index} className="tonnage-input">
-          <label>Layer {index + 1} Tonnage (tons):</label>
-          <input
-            type="number"
-            step="any"
-            value={tonnageInputs[index]?.tonnage || ''}
-            onChange={(e) => handleTonnageChange(index, e.target.value)}
-            placeholder="Optional"
-          />
-        </div>
-      ))}
-      <div className="step-buttons">
-        <button onClick={prevStep}>Previous</button>
-        <button onClick={() => {
-          // Submit all data for processing
-          const processingData = {
-            surfaceFiles,
-            georeferenceParams,
-            analysisBoundary,
-            tonnageInputs: tonnageInputs.filter(t => t && t.tonnage > 0)
-          };
-          
-          // Call the onComplete callback with the processing data
-          if (onComplete) {
-            onComplete(processingData);
-          }
-        }}>
-          Start Analysis
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderCurrentStep = () => {
-    switch (currentStep) {
-      case 1: return renderStep1();
-      case 2: return renderStep2();
-      case 3: return renderStep3();
-      case 4: return renderStep4();
-      case 5: return renderStep5();
-      default: return renderStep1();
+    
+    if (generateBaseline) {
+        if (baseSurfaceOffset <= 0) {
+            return false;
+        }
     }
+    
+    // Check georeferencing
+    for (let i = 0; i < requiredSurfaces; i++) {
+        const params = georeferenceParams[i];
+        if (!params || 
+            params.wgs84_lat == null || 
+            params.wgs84_lon == null || 
+            params.orientation_degrees == null || 
+            params.scaling_factor == null) {
+            return false;
+        }
+    }
+
+    // Check boundary
+    for (let i = 0; i < 4; i++) {
+        const coord = analysisBoundary.coordinates[i];
+        if (!coord || coord.lat == null || coord.lon == null) {
+            return false;
+        }
+    }
+
+    return true;
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!canProceed()) {
+      alert("Please fill all required fields, including georeferencing and boundary coordinates for all surfaces.");
+      return;
+    }
+    onWizardComplete();
   };
 
   return (
-    <div className="input-forms">
-      <div className="progress-indicator">
-        {[1, 2, 3, 4, 5].map(step => (
-          <div 
-            key={step} 
-            className={`progress-step ${currentStep >= step ? 'active' : ''}`}
-          >
-            Step {step}
+    <div className="container mx-auto p-8 bg-white shadow-lg rounded-lg">
+      <h1 className="text-2xl font-bold mb-6">Analysis Setup</h1>
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+          {/* Left Column: Layers and Surfaces */}
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">Project Setup</h2>
+            </div>
+            <div className="mb-4">
+              <label htmlFor="numLayers" className="block text-sm font-medium text-gray-700">
+                Number of Surfaces (Layers)
+              </label>
+              <select
+                id="numLayers"
+                value={numLayers}
+                onChange={(e) => {
+                  const newNumLayers = parseInt(e.target.value, 10);
+                  setNumLayers(newNumLayers);
+                  const newSurfaces = new Array(newNumLayers).fill(null);
+                  surfaces.forEach((surface, index) => {
+                    if (index < newNumLayers) newSurfaces[index] = surface;
+                  });
+                  setSurfaces(newSurfaces);
+                  setGeoreferenceParams(new Array(newNumLayers).fill({}));
+                }}
+                disabled={generateBaseline}
+                className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+              >
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center">
+              <input
+                id="generateBaseline"
+                type="checkbox"
+                checked={generateBaseline}
+                onChange={(e) => {
+                  setGenerateBaseline(e.target.checked);
+                  if (e.target.checked) {
+                    setNumLayers(1);
+                    const newSurfaces = new Array(1).fill(null);
+                    if (surfaces[0]) newSurfaces[0] = surfaces[0];
+                    setSurfaces(newSurfaces);
+                    setGeoreferenceParams(new Array(1).fill({}));
+                  }
+                }}
+                className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              />
+              <label htmlFor="generateBaseline" className="ml-2 block text-sm text-gray-900">
+                Generate Baseline Surface
+              </label>
+            </div>
+            
+            {generateBaseline && (
+                <div className="mb-4">
+                    <label htmlFor="baseSurfaceOffset" className="block text-sm font-medium text-gray-700">
+                        Base Surface Offset (feet)
+                    </label>
+                    <input
+                        type="number"
+                        id="baseSurfaceOffset"
+                        value={baseSurfaceOffset}
+                        onChange={(e) => setBaseSurfaceOffset(parseFloat(e.target.value) || 0)}
+                        className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"
+                    />
+                </div>
+            )}
+
+            {Array.from({ length: numLayers }, (_, i) => (
+              <div key={i} className="mt-6 border-t border-gray-200 pt-6">
+                <h3 className="text-lg font-medium leading-6 text-gray-900">
+                  {generateBaseline ? 'Reference Surface' : `Layer ${i}`}
+                </h3>
+                {/* Surface Upload */}
+                <div className="mt-4">
+                  <label htmlFor={`surface-file-${i}`} className="block text-sm font-medium text-gray-700">
+                    Surface File (.ply)
+                  </label>
+                  <input type="file" id={`surface-file-${i}`} accept=".ply" onChange={(e) => handleFileUpload(e.target.files[0], i)} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
+                  {surfaces[i] && <span className="text-sm text-green-600">Uploaded: {surfaces[i].file.name}</span>}
+                </div>
+
+                {/* Georeferencing */}
+                <div className="mt-4 grid grid-cols-2 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">WGS84 Lat</label>
+                        <input type="number" step="any" value={georeferenceParams[i]?.wgs84_lat || ''} onChange={(e) => handleGeoreferenceChange(i, 'wgs84_lat', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">WGS84 Lon</label>
+                        <input type="number" step="any" value={georeferenceParams[i]?.wgs84_lon || ''} onChange={(e) => handleGeoreferenceChange(i, 'wgs84_lon', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Orientation (°)</label>
+                        <input type="number" step="any" value={georeferenceParams[i]?.orientation_degrees || ''} onChange={(e) => handleGeoreferenceChange(i, 'orientation_degrees', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Scale Factor</label>
+                        <input type="number" step="any" value={georeferenceParams[i]?.scaling_factor || '1.0'} onChange={(e) => handleGeoreferenceChange(i, 'scaling_factor', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                    </div>
+                </div>
+
+                {/* Tonnage Input */}
+                {i > 0 && !generateBaseline && (
+                  <div className="mt-4">
+                    <label htmlFor={`tonnage-${i}`} className="block text-sm font-medium text-gray-700">
+                      Tonnage for Layer {i}
+                    </label>
+                    <input type="number" id={`tonnage-${i}`} value={tonnages[i] || ''} onChange={(e) => setTonnages({ ...tonnages, [i]: parseFloat(e.target.value) || 0 })} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      {renderCurrentStep()}
+
+          {/* Right Column: Config and Boundary */}
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2 mt-6">Analysis Boundary</h2>
+              <p className="text-sm text-gray-600 mt-1">Define the four corners of the analysis area in WGS84 coordinates.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+                {analysisBoundary.coordinates.map((coord, index) => (
+                    <div key={index} className="border-t border-gray-200 pt-4">
+                        <h4 className="text-md font-medium text-gray-800">Point {index + 1}</h4>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Latitude</label>
+                            <input type="number" step="any" value={coord.lat} onChange={(e) => handleBoundaryChange(index, 'lat', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Longitude</label>
+                            <input type="number" step="any" value={coord.lon} onChange={(e) => handleBoundaryChange(index, 'lon', e.target.value)} className="mt-1 block w-full shadow-sm sm:text-sm border-gray-300 rounded-md"/>
+                        </div>
+                    </div>
+                ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="mt-8 pt-5 border-t border-gray-200">
+          <div className="flex justify-end">
+            <button type="button" onClick={onBack} className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+              Back
+            </button>
+            <button type="submit" disabled={!canProceed()} className="ml-3 inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400">
+              Run Analysis
+            </button>
+          </div>
+        </div>
+      </form>
     </div>
   );
 };

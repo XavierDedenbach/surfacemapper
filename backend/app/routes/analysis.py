@@ -6,17 +6,31 @@ from app.services import thickness_calculator
 from app.services.coord_transformer import CoordinateTransformer
 import numpy as np
 from app.services.statistical_analysis import StatisticalAnalyzer
-from app.models.data_models import StatisticalAnalysis
+from app.models.data_models import StatisticalAnalysis, ProcessingRequest
 from fastapi import status
 from app.services.data_export import DataExporter
 import tempfile
 import os
 from datetime import datetime
 
-router = APIRouter(prefix="/api/analysis", tags=["analysis"])
+router = APIRouter(prefix="/analysis", tags=["analysis"])
 executor = AnalysisExecutor()
 stat_analyzer = StatisticalAnalyzer()
 data_exporter = DataExporter()
+
+@router.post("/start", status_code=status.HTTP_202_ACCEPTED)
+async def start_analysis(request: ProcessingRequest):
+    """
+    Starts a new analysis job.
+    """
+    try:
+        analysis_id = executor.generate_analysis_id()
+        # The request body is now a Pydantic model, so we convert it to a dict
+        params = request.dict()
+        result = executor.start_analysis_execution(analysis_id, params)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to start analysis: " + str(e))
 
 @router.post("/{analysis_id}/execute")
 async def execute_analysis(analysis_id: str, request: Request):
@@ -117,7 +131,7 @@ async def cancel_analysis(analysis_id: str):
             raise HTTPException(status_code=400, detail="Analysis already cancelled")
         raise HTTPException(status_code=500, detail="Internal server error: " + str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error: " + str(e))
+        raise HTTPException(status_code=500, detail="Internal server error: " + str(e)) 
 
 @router.post("/{analysis_id}/point_query")
 async def point_query(

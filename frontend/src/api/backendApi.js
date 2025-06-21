@@ -5,19 +5,60 @@
 
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8081';
-
-// Create axios instance with default configuration
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000, // 30 second timeout
+const api = axios.create({
+  baseURL: '/',
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+const backendApi = {
+  uploadSurface: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file, file.name);
+
+    try {
+      const response = await api.post('/api/surfaces/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      if (error.response) {
+        const errorData = error.response.data;
+        const errorMessage = errorData.detail || JSON.stringify(errorData);
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server during file upload.');
+      } else {
+        throw new Error(error.message);
+      }
+    }
+  },
+
+  startAnalysis: async (formData) => {
+    try {
+      const response = await api.post('/api/analysis/start', formData);
+      return response.data;
+    } catch (error) {
+      console.error('Error starting analysis:', error);
+      if (error.response) {
+        const errorData = error.response.data;
+        const errorMessage = errorData.detail || JSON.stringify(errorData);
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server. The backend might be down or unresponsive.');
+      } else {
+        throw new Error(error.message || 'An unknown error occurred while setting up the request.');
+      }
+    }
+  },
+};
+
 // Request interceptor for logging and authentication
-apiClient.interceptors.request.use(
+api.interceptors.request.use(
   (config) => {
     console.log(`API Request: ${config.method?.toUpperCase()} ${config.url}`);
     return config;
@@ -29,7 +70,7 @@ apiClient.interceptors.request.use(
 );
 
 // Response interceptor for error handling
-apiClient.interceptors.response.use(
+api.interceptors.response.use(
   (response) => {
     console.log(`API Response: ${response.status} ${response.config.url}`);
     return response;
@@ -53,26 +94,10 @@ apiClient.interceptors.response.use(
 );
 
 /**
- * Upload a surface file
- */
-export const uploadSurface = async (file) => {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await apiClient.post('/surfaces/upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-
-  return response.data;
-};
-
-/**
  * Process surfaces for analysis
  */
 export const processSurfaces = async (processingRequest) => {
-  const response = await apiClient.post('/surfaces/process', processingRequest);
+  const response = await api.post('/api/analysis/start', processingRequest);
   return response.data;
 };
 
@@ -80,7 +105,7 @@ export const processSurfaces = async (processingRequest) => {
  * Get processing status
  */
 export const getProcessingStatus = async (jobId) => {
-  const response = await apiClient.get(`/surfaces/status/${jobId}`);
+  const response = await api.get(`/api/analysis/${jobId}/status`);
   return response.data;
 };
 
@@ -88,7 +113,7 @@ export const getProcessingStatus = async (jobId) => {
  * Get analysis results
  */
 export const getAnalysisResults = async (jobId) => {
-  const response = await apiClient.get(`/surfaces/results/${jobId}`);
+  const response = await api.get(`/api/analysis/${jobId}/results`);
   return response.data;
 };
 
@@ -96,7 +121,7 @@ export const getAnalysisResults = async (jobId) => {
  * Get point analysis data for interactive 3D visualization
  */
 export const getPointAnalysis = async (x, y, coordinateSystem = 'utm') => {
-  const response = await apiClient.post('/surfaces/point-analysis', {
+  const response = await api.post(`/api/analysis/point_query`, {
     x,
     y,
     coordinate_system: coordinateSystem,
@@ -108,7 +133,7 @@ export const getPointAnalysis = async (x, y, coordinateSystem = 'utm') => {
  * Get surface visualization data (mesh data for Three.js)
  */
 export const getSurfaceVisualization = async (surfaceIds, levelOfDetail = 'medium') => {
-  const response = await apiClient.post('/surfaces/visualization', {
+  const response = await api.post('/api/analysis/3d-visualization', {
     surface_ids: surfaceIds,
     level_of_detail: levelOfDetail,
   });
@@ -118,8 +143,8 @@ export const getSurfaceVisualization = async (surfaceIds, levelOfDetail = 'mediu
 /**
  * Get 3D mesh data for specific surface
  */
-export const getSurfaceMesh = async (surfaceId, levelOfDetail = 'medium') => {
-  const response = await apiClient.get(`/surfaces/${surfaceId}/mesh`, {
+export const getSurfaceMesh = async (analysisId, surfaceIndex, levelOfDetail = 'medium') => {
+  const response = await api.get(`/api/analysis/${analysisId}/surface/${surfaceIndex}/mesh`, {
     params: { level_of_detail: levelOfDetail },
   });
   return response.data;
@@ -128,8 +153,9 @@ export const getSurfaceMesh = async (surfaceId, levelOfDetail = 'medium') => {
 /**
  * Export analysis results
  */
-export const exportResults = async (jobId, format = 'json') => {
-  const response = await apiClient.get(`/surfaces/export/${jobId}`, {
+export const exportResults = async (analysisId, format = 'json') => {
+  const response = await api.get(`/api/analysis/${analysisId}/export`, {
+    params: { format },
     headers: {
       'Accept': format === 'csv' ? 'text/csv' : 'application/json',
     },
@@ -142,7 +168,7 @@ export const exportResults = async (jobId, format = 'json') => {
  * Get system health status
  */
 export const getHealthStatus = async () => {
-  const response = await apiClient.get('/health');
+  const response = await api.get('/health');
   return response.data;
 };
 
@@ -150,7 +176,7 @@ export const getHealthStatus = async () => {
  * Get API documentation
  */
 export const getApiDocs = async () => {
-  const response = await apiClient.get('/docs');
+  const response = await api.get('/docs');
   return response.data;
 };
 
@@ -161,7 +187,7 @@ export const validatePlyFile = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
 
-  const response = await apiClient.post('/surfaces/validate', formData, {
+  const response = await api.post('/api/surfaces/validate', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
@@ -172,8 +198,8 @@ export const validatePlyFile = async (file) => {
 /**
  * Get supported coordinate systems
  */
-export const getCoordinateSystems = async () => {
-  const response = await apiClient.get('/coordinate-systems');
+export const getSupportedCoordinateSystems = async () => {
+  const response = await api.get('/api/surfaces/coordinate-systems');
   return response.data;
 };
 
@@ -181,7 +207,7 @@ export const getCoordinateSystems = async () => {
  * Transform coordinates
  */
 export const transformCoordinates = async (coordinates, fromSystem, toSystem) => {
-  const response = await apiClient.post('/coordinate-transform', {
+  const response = await api.post('/surfaces/coordinate-transform', {
     coordinates,
     from_system: fromSystem,
     to_system: toSystem,
@@ -193,7 +219,7 @@ export const transformCoordinates = async (coordinates, fromSystem, toSystem) =>
  * Get processing configuration
  */
 export const getProcessingConfig = async () => {
-  const response = await apiClient.get('/config/processing');
+  const response = await api.get('/config/processing');
   return response.data;
 };
 
@@ -201,7 +227,7 @@ export const getProcessingConfig = async () => {
  * Update processing configuration
  */
 export const updateProcessingConfig = async (config) => {
-  const response = await apiClient.put('/config/processing', config);
+  const response = await api.put('/config/processing', config);
   return response.data;
 };
 
@@ -209,7 +235,7 @@ export const updateProcessingConfig = async (config) => {
  * Get processing history
  */
 export const getProcessingHistory = async (limit = 10, offset = 0) => {
-  const response = await apiClient.get('/surfaces/history', {
+  const response = await api.get('/surfaces/history', {
     params: { limit, offset },
   });
   return response.data;
@@ -219,7 +245,7 @@ export const getProcessingHistory = async (limit = 10, offset = 0) => {
  * Delete processing job
  */
 export const deleteProcessingJob = async (jobId) => {
-  const response = await apiClient.delete(`/surfaces/job/${jobId}`);
+  const response = await api.delete(`/surfaces/job/${jobId}`);
   return response.data;
 };
 
@@ -227,7 +253,7 @@ export const deleteProcessingJob = async (jobId) => {
  * Retry processing job
  */
 export const retryProcessingJob = async (jobId) => {
-  const response = await apiClient.post(`/surfaces/job/${jobId}/retry`);
+  const response = await api.post(`/surfaces/job/${jobId}/retry`);
   return response.data;
 };
 
@@ -235,7 +261,7 @@ export const retryProcessingJob = async (jobId) => {
  * Get processing statistics
  */
 export const getProcessingStats = async () => {
-  const response = await apiClient.get('/surfaces/stats');
+  const response = await api.get('/surfaces/stats');
   return response.data;
 };
 
@@ -248,7 +274,7 @@ export const batchUploadSurfaces = async (files) => {
     formData.append(`files`, file);
   });
 
-  const response = await apiClient.post('/surfaces/batch-upload', formData, {
+  const response = await api.post('/surfaces/batch-upload', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
@@ -260,7 +286,7 @@ export const batchUploadSurfaces = async (files) => {
  * Get surface metadata
  */
 export const getSurfaceMetadata = async (surfaceId) => {
-  const response = await apiClient.get(`/surfaces/${surfaceId}/metadata`);
+  const response = await api.get(`/surfaces/${surfaceId}/metadata`);
   return response.data;
 };
 
@@ -268,7 +294,7 @@ export const getSurfaceMetadata = async (surfaceId) => {
  * Update surface metadata
  */
 export const updateSurfaceMetadata = async (surfaceId, metadata) => {
-  const response = await apiClient.put(`/surfaces/${surfaceId}/metadata`, metadata);
+  const response = await api.put(`/surfaces/${surfaceId}/metadata`, metadata);
   return response.data;
 };
 
@@ -276,7 +302,7 @@ export const updateSurfaceMetadata = async (surfaceId, metadata) => {
  * Delete surface
  */
 export const deleteSurface = async (surfaceId) => {
-  const response = await apiClient.delete(`/surfaces/${surfaceId}`);
+  const response = await api.delete(`/surfaces/${surfaceId}`);
   return response.data;
 };
 
@@ -284,7 +310,7 @@ export const deleteSurface = async (surfaceId) => {
  * Get analysis boundary validation
  */
 export const validateAnalysisBoundary = async (boundary) => {
-  const response = await apiClient.post('/surfaces/validate-boundary', boundary);
+  const response = await api.post('/surfaces/validate-boundary', boundary);
   return response.data;
 };
 
@@ -292,7 +318,7 @@ export const validateAnalysisBoundary = async (boundary) => {
  * Get surface overlap analysis
  */
 export const getSurfaceOverlap = async (surfaceIds) => {
-  const response = await apiClient.post('/surfaces/overlap-analysis', {
+  const response = await api.post('/surfaces/overlap-analysis', {
     surface_ids: surfaceIds,
   });
   return response.data;
@@ -302,11 +328,11 @@ export const getSurfaceOverlap = async (surfaceIds) => {
  * Get volume calculation preview
  */
 export const getVolumePreview = async (surfaceIds, boundary) => {
-  const response = await apiClient.post('/surfaces/volume-preview', {
+  const response = await api.post('/surfaces/volume-preview', {
     surface_ids: surfaceIds,
     boundary,
   });
   return response.data;
 };
 
-export default apiClient; 
+export default backendApi; 

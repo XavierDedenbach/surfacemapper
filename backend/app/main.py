@@ -42,8 +42,8 @@ app.add_middleware(
 )
 
 # Include routers
-app.include_router(surfaces.router, prefix="/api/v1")
-app.include_router(analysis.router)
+app.include_router(surfaces.router, prefix="/api")
+app.include_router(analysis.router, prefix="/api")
 
 @app.get("/health")
 async def health_check():
@@ -63,7 +63,7 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/health",
-        "api_base": "/api/v1"
+        "api_base": "/api"
     }
 
 @app.get("/api-info")
@@ -76,9 +76,9 @@ async def api_info():
         "endpoints": {
             "health": "/health",
             "docs": "/docs",
-            "surfaces": "/api/v1/surfaces",
-            "coordinate_systems": "/api/v1/surfaces/coordinate-systems",
-            "coordinate_transform": "/api/v1/surfaces/coordinate-transform"
+            "surfaces": "/api/surfaces",
+            "coordinate_systems": "/api/surfaces/coordinate-systems",
+            "coordinate_transform": "/api/surfaces/coordinate-transform"
         },
         "features": [
             "PLY file upload and validation",

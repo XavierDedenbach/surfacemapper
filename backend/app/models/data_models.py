@@ -16,7 +16,10 @@ class SurfaceUploadResponse(BaseModel):
     """Response model for surface upload"""
     message: str
     filename: str
+    surface_id: str = Field(..., description="Unique identifier for the uploaded surface")
     status: ProcessingStatus
+    vertices: Optional[List[Tuple[float, float, float]]] = Field(None, description="List of vertex coordinates")
+    faces: Optional[List[List[int]]] = Field(None, description="List of face indices")
 
 class GeoreferenceParams(BaseModel):
     """Georeferencing parameters for a surface"""
@@ -36,7 +39,7 @@ class TonnageInput(BaseModel):
 
 class ProcessingRequest(BaseModel):
     """Request model for surface processing"""
-    surface_files: List[str] = Field(..., min_length=1, max_length=4, description="List of uploaded surface file paths")
+    surface_ids: List[str] = Field(..., min_length=1, max_length=4, description="List of uploaded surface IDs")
     georeference_params: List[GeoreferenceParams] = Field(..., description="Georeferencing parameters for each surface")
     analysis_boundary: AnalysisBoundary = Field(..., description="Analysis boundary definition")
     tonnage_inputs: Optional[List[TonnageInput]] = Field(None, description="Optional tonnage inputs for compaction calculation")
@@ -47,9 +50,9 @@ class ProcessingRequest(BaseModel):
     @classmethod
     def validate_georeference_params_match_files(cls, v, info):
         """Validate that georeference params match the number of surface files"""
-        if 'surface_files' in info.data:
-            if len(v) != len(info.data['surface_files']):
-                raise ValueError(f"Number of georeference parameters ({len(v)}) must match number of surface files ({len(info.data['surface_files'])})")
+        if 'surface_ids' in info.data:
+            if len(v) != len(info.data['surface_ids']):
+                raise ValueError(f"Number of georeference parameters ({len(v)}) must match number of surface IDs ({len(info.data['surface_ids'])})")
         return v
 
 class ProcessingResponse(BaseModel):

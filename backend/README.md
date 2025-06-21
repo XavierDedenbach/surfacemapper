@@ -1,5 +1,97 @@
 # Surface Mapper Backend
 
+## Getting Started
+
+### 1. Prerequisites
+- **Python**: 3.9+ (ideally matches your dev environment)
+- **Node.js**: 16+ (for frontend, if you want the UI)
+- **Docker** (optional, for containerized deployment)
+- **.ply file**: Your surface mesh file
+
+### 2. Backend Setup
+
+#### A. Using Python (Local Dev)
+1. **Install dependencies**  
+   From the `backend/` directory:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. **Start the backend server**
+   ```bash
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8081
+   ```
+   - The API will be available at: [http://localhost:8081](http://localhost:8081)
+   - Docs: [http://localhost:8081/docs](http://localhost:8081/docs)
+   - Health check: [http://localhost:8081/health](http://localhost:8081/health)
+
+#### B. Using Docker
+1. **Build and run the backend container**
+   ```bash
+   docker build -f ../Dockerfile.backend -t surfacemapper-backend ..
+   docker run -p 8081:8081 surfacemapper-backend
+   ```
+
+### 3. Frontend Setup (Optional, for Web UI)
+
+#### A. Using Node.js
+1. From the `frontend/` directory:
+   ```bash
+   npm install
+   npm run build
+   npm start
+   ```
+   - The UI will be available at: [http://localhost:3000](http://localhost:3000)
+
+#### B. Using Docker
+1. **Build and run the frontend container**
+   ```bash
+   docker build -f ../Dockerfile.frontend -t surfacemapper-frontend ..
+   docker run -p 3000:80 surfacemapper-frontend
+   ```
+
+### 4. Uploading Your First `.ply` File
+
+#### A. Using the API (cURL)
+```bash
+curl -X POST "http://localhost:8081/api/v1/surfaces/upload" \
+  -F "file=@/path/to/your/surface.ply"
+```
+- You should get a JSON response confirming upload.
+
+#### B. Using the Web UI
+1. Open [http://localhost:3000](http://localhost:3000)
+2. Use the upload form to select and submit your `.ply` file.
+
+### 5. Processing the Surface
+- After upload, use the API or UI to trigger processing.
+- Example API call (adjust parameters as needed):
+  ```bash
+  curl -X POST "http://localhost:8081/api/v1/surfaces/process" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "surface_files": ["surface.ply"],
+      "georeference_params": [{"wgs84_lat": 40.0, "wgs84_lon": -120.0, "orientation_degrees": 0.0, "scaling_factor": 1.0}],
+      "analysis_boundary": {"wgs84_coordinates": [[40.0, -120.0], [40.0, -119.0], [41.0, -119.0], [41.0, -120.0]]}
+    }'
+  ```
+
+### 6. Checking Status & Results
+- **Status:**  
+  ```bash
+  curl "http://localhost:8081/api/v1/surfaces/status/<job_id>"
+  ```
+- **Results:**  
+  Use the `/api/analysis/` endpoints as documented in [http://localhost:8081/docs](http://localhost:8081/docs).
+
+### 7. Troubleshooting
+- Check logs in your terminal for errors.
+- Use the `/health` endpoint to verify the backend is running.
+- For CORS issues, ensure both frontend and backend are running on the correct ports.
+
+---
+
+# Surface Mapper Backend
+
 This is the Python FastAPI backend for the Surface Volume and Layer Thickness Analysis Tool.
 
 ## Architecture

@@ -35,26 +35,6 @@ const useSurfaceData = () => {
     }
   }, []);
 
-  // Process surfaces for analysis
-  const processSurfaceData = useCallback(async (processingRequest) => {
-    setProcessingStatus('processing');
-    setError(null);
-
-    try {
-      const response = await processSurfaces(processingRequest);
-      setProcessingJobId(response.job_id);
-      
-      // Start polling for status
-      pollProcessingStatus(response.job_id);
-      
-      return response;
-    } catch (err) {
-      setError(`Processing failed: ${err.message}`);
-      setProcessingStatus('error');
-      throw err;
-    }
-  }, []);
-
   // Poll processing status
   const pollProcessingStatus = useCallback(async (jobId) => {
     const pollInterval = setInterval(async () => {
@@ -87,6 +67,26 @@ const useSurfaceData = () => {
       }
     }, 600000);
   }, [processingStatus]);
+
+  // Process surfaces for analysis
+  const processSurfaceData = useCallback(async (processingRequest) => {
+    setProcessingStatus('processing');
+    setError(null);
+
+    try {
+      const response = await processSurfaces(processingRequest);
+      setProcessingJobId(response.job_id);
+      
+      // Start polling for status
+      pollProcessingStatus(response.job_id);
+      
+      return response;
+    } catch (err) {
+      setError(`Processing failed: ${err.message}`);
+      setProcessingStatus('error');
+      throw err;
+    }
+  }, [pollProcessingStatus]);
 
   // Clear surfaces
   const clearSurfaces = useCallback(() => {

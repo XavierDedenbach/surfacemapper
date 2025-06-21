@@ -278,14 +278,14 @@ class TestPLYParserIntegration:
         else:
             # If successful, check the expected structure
             assert 'format' in info
-            assert info['format'] == 'ascii'
+        assert info['format'] == 'ascii'
             assert 'elements' in info
-            assert 'vertex' in info['elements']
+        assert 'vertex' in info['elements']
             assert 'vertex_count' in info
-            assert info['vertex_count'] == 1
+        assert info['vertex_count'] == 1
             assert 'properties' in info
             assert 'vertex' in info['properties']
-            assert 'x' in info['properties']['vertex']
+        assert 'x' in info['properties']['vertex']
         
         os.remove(path)
 

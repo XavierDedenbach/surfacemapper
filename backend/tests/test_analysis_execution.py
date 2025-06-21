@@ -174,9 +174,9 @@ class TestAnalysisExecution:
             # Mock the cancel method to raise the expected error
             with patch('app.services.analysis_executor.AnalysisExecutor.cancel_analysis') as mock_cancel:
                 mock_cancel.side_effect = RuntimeError("Analysis already completed")
-                
-                response = client.post(f"/api/analysis/{analysis_id}/cancel")
-                assert response.status_code == 400
+            
+            response = client.post(f"/api/analysis/{analysis_id}/cancel")
+            assert response.status_code == 400
                 assert "already completed" in response.json()["error"].lower()
     
     
@@ -195,9 +195,9 @@ class TestAnalysisExecution:
             # Mock the cancel method to raise the expected error
             with patch('app.services.analysis_executor.AnalysisExecutor.cancel_analysis') as mock_cancel:
                 mock_cancel.side_effect = RuntimeError("Analysis already cancelled")
-                
-                response = client.post(f"/api/analysis/{analysis_id}/cancel")
-                assert response.status_code == 400
+            
+            response = client.post(f"/api/analysis/{analysis_id}/cancel")
+            assert response.status_code == 400
                 assert "already cancelled" in response.json()["error"].lower()
     
     

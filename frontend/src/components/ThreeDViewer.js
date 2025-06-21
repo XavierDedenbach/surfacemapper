@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
@@ -10,9 +10,7 @@ const ThreeDViewer = ({
   surfaces, 
   analysisBoundary, 
   onPointHover, 
-  selectedSurfaces,
-  onPointSelect,
-  onSurfaceToggle 
+  selectedSurfaces
 }) => {
   // Validate props
   const data = {
@@ -22,9 +20,7 @@ const ThreeDViewer = ({
   };
 
   const callbacks = {
-    onPointHover: onPointHover || (() => {}),
-    onPointSelect: onPointSelect || (() => {}),
-    onSurfaceToggle: onSurfaceToggle || (() => {})
+    onPointHover: onPointHover || (() => {})
   };
 
   const mountRef = useRef(null);
@@ -35,19 +31,17 @@ const ThreeDViewer = ({
   const mouseRef = useRef(new THREE.Vector2());
 
   const [isInitialized, setIsInitialized] = useState(false);
-  const [selectedPoint, setSelectedPoint] = useState(null);
   const [visibleSurfaces, setVisibleSurfaces] = useState(new Set());
 
   // Handle point selection with validation
-  const handlePointSelect = (point) => {
-    setSelectedPoint(point);
-    if (point && callbacks.onPointSelect) {
-      callbacks.onPointSelect(point);
+  const handlePointSelect = useCallback((point) => {
+    if (point && callbacks.onPointHover) {
+      callbacks.onPointHover(point.x, point.y, point.z);
     }
-  };
+  }, [callbacks]);
 
   // Handle surface visibility toggle with validation
-  const handleSurfaceToggle = (surfaceIndex) => {
+  const handleSurfaceToggle = useCallback((surfaceIndex) => {
     const newVisibleSurfaces = new Set(visibleSurfaces);
     if (newVisibleSurfaces.has(surfaceIndex)) {
       newVisibleSurfaces.delete(surfaceIndex);
@@ -55,15 +49,12 @@ const ThreeDViewer = ({
       newVisibleSurfaces.add(surfaceIndex);
     }
     setVisibleSurfaces(newVisibleSurfaces);
-    
-    if (callbacks.onSurfaceToggle) {
-      callbacks.onSurfaceToggle(surfaceIndex, newVisibleSurfaces.has(surfaceIndex));
-    }
-  };
+  }, [visibleSurfaces]);
 
   // Initialize Three.js scene with validation
   useEffect(() => {
     if (!mountRef.current) return;
+    const mountNode = mountRef.current;
 
     try {
       // Scene setup
@@ -74,7 +65,7 @@ const ThreeDViewer = ({
       // Camera setup
       const camera = new THREE.PerspectiveCamera(
         75,
-        mountRef.current.clientWidth / mountRef.current.clientHeight,
+        mountNode.clientWidth / mountNode.clientHeight,
         0.1,
         1000
       );
@@ -82,7 +73,7 @@ const ThreeDViewer = ({
 
       // Renderer setup
       const renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(mountRef.current.clientWidth, mountRef.current.clientHeight);
+      renderer.setSize(mountNode.clientWidth, mountNode.clientHeight);
       renderer.shadowMap.enabled = true;
       renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       rendererRef.current = renderer;
@@ -110,7 +101,7 @@ const ThreeDViewer = ({
       const axesHelper = new THREE.AxesHelper(5);
       scene.add(axesHelper);
 
-      mountRef.current.appendChild(renderer.domElement);
+      mountNode.appendChild(renderer.domElement);
       setIsInitialized(true);
 
       // Animation loop
@@ -127,8 +118,8 @@ const ThreeDViewer = ({
 
       // Cleanup
       return () => {
-        if (mountRef.current && renderer.domElement) {
-          mountRef.current.removeChild(renderer.domElement);
+        if (mountNode && renderer.domElement) {
+          mountNode.removeChild(renderer.domElement);
         }
         if (renderer) {
           renderer.dispose();
@@ -256,9 +247,7 @@ const ThreeDViewer = ({
 
       if (intersects.length > 0) {
         const point = intersects[0].point;
-        if (onPointHover) {
-          onPointHover(point.x, point.y, point.z);
-        }
+        handlePointSelect(point);
       }
     };
 
@@ -267,7 +256,7 @@ const ThreeDViewer = ({
       canvas.addEventListener('mousemove', handleMouseMove);
       return () => canvas.removeEventListener('mousemove', handleMouseMove);
     }
-  }, [isInitialized, onPointHover]);
+  }, [isInitialized, handlePointSelect]);
 
   return (
     <div className="three-d-viewer">

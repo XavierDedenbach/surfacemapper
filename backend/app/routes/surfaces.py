@@ -8,6 +8,8 @@ from app.models.data_models import (
     AnalysisResults, VolumeResult, ThicknessResult, CompactionResult, ProcessingStatus
 )
 from app.utils.file_validator import validate_file_extension, validate_file_size, validate_ply_format
+from app.utils.ply_parser import PLYParser
+from app.services.surface_cache import surface_cache
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/surfaces", tags=["surfaces"])
@@ -57,11 +59,38 @@ async def upload_surface(file: UploadFile = File(...)):
         os.remove(temp_path)
         raise HTTPException(status_code=400, detail="Invalid or corrupted PLY file.")
 
+    # Parse the PLY file to get vertices and faces
+    try:
+        parser = PLYParser()
+        vertices, faces = parser.parse_ply_file(temp_path)
+        
+        vertices_list = vertices.tolist() if vertices is not None else []
+        faces_list = faces.tolist() if faces is not None else []
+        
+        # Generate a unique ID and cache the surface data
+        surface_id = str(uuid.uuid4())
+        surface_cache.set(surface_id, {
+            "vertices": vertices_list,
+            "faces": faces_list,
+            "filename": file.filename
+        })
+        
+    except Exception as e:
+        logger.error(f"Failed to parse PLY file: {e}")
+        os.remove(temp_path)
+        raise HTTPException(status_code=500, detail="Failed to parse PLY file content.")
+    finally:
+        # Clean up the temporary file
+        os.remove(temp_path)
+
     # Success
     return SurfaceUploadResponse(
         message="Surface uploaded successfully",
         filename=file.filename,
-        status=ProcessingStatus.PENDING
+        surface_id=surface_id,
+        status=ProcessingStatus.PENDING,
+        vertices=vertices_list,
+        faces=faces_list
     )
 
 @router.post("/validate")

@@ -377,8 +377,8 @@ end_header
         boundary = [(0.0, 0.0), (10.0, 10.0)]
         start_time = time.time()
         try:
-            clipped_vertices = surface_processor.clip_to_boundary(vertices, boundary)
-            clipping_time = time.time() - start_time
+        clipped_vertices = surface_processor.clip_to_boundary(vertices, boundary)
+        clipping_time = time.time() - start_time
             assert clipping_time < 1.0  # Should complete within 1 second
             assert len(clipped_vertices) <= len(vertices)
         except Exception as e:
@@ -388,9 +388,9 @@ end_header
         # Test mesh simplification performance with error handling
         start_time = time.time()
         try:
-            simplified_vertices, simplified_faces = surface_processor.simplify_mesh(vertices, faces, 0.5)
-            simplification_time = time.time() - start_time
-            assert simplification_time < 5.0  # Should complete within 5 seconds
+        simplified_vertices, simplified_faces = surface_processor.simplify_mesh(vertices, faces, 0.5)
+        simplification_time = time.time() - start_time
+        assert simplification_time < 5.0  # Should complete within 5 seconds
             assert len(simplified_vertices) <= len(vertices)
             assert len(simplified_faces) <= len(faces)
         except Exception as e:
@@ -399,7 +399,7 @@ end_header
             # Test with just vertices (no faces) as fallback
             try:
                 simplified_vertices, _ = surface_processor.simplify_mesh(vertices, None, 0.5)
-                assert len(simplified_vertices) <= len(vertices)
+        assert len(simplified_vertices) <= len(vertices)
             except Exception as e2:
                 print(f"Fallback simplification also failed: {e2}")
                 # If both fail, just ensure the test doesn't crash

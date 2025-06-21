@@ -1,13 +1,19 @@
 import threading
 import time
 import uuid
+import numpy as np
 from typing import Dict, Any, Optional
+from app.services.surface_processor import SurfaceProcessor
+from app.services.surface_cache import surface_cache
 
 class AnalysisExecutor:
     """Manages background analysis execution, progress, and cancellation."""
     _jobs: Dict[str, Dict[str, Any]] = {}
     _results_cache: Dict[str, Dict[str, Any]] = {}
     _lock = threading.Lock()
+
+    def __init__(self):
+        self.surface_processor = SurfaceProcessor()
 
     def start_analysis_execution(self, analysis_id: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         with self._lock:
@@ -20,7 +26,7 @@ class AnalysisExecutor:
                 "progress_percent": 0.0,
                 "current_step": "initializing",
                 "cancelled": False,
-                "estimated_duration": self.calculate_estimated_duration(1),
+                "estimated_duration": self.calculate_estimated_duration(len(params.get('surface_ids', []))),
                 "start_time": time.time(),
                 "params": params or {},
                 "thread": None
@@ -36,27 +42,65 @@ class AnalysisExecutor:
         }
 
     def _run_analysis(self, analysis_id: str):
-        steps = ["preprocessing", "volume_calculation", "thickness_analysis", "postprocessing"]
-        total_steps = len(steps)
-        for i, step in enumerate(steps):
-            with self._lock:
-                job = self._jobs[analysis_id]
-                if job["cancelled"]:
-                    job["status"] = "cancelled"
-                    job["progress_percent"] = float(i) / total_steps * 100
-                    job["current_step"] = step
-                    return
-                job["current_step"] = step
-                job["progress_percent"] = float(i) / total_steps * 100
-            time.sleep(0.2)  # Simulate work
         with self._lock:
             job = self._jobs[analysis_id]
+            params = job['params']
+            surfaces_to_process = []
+            surface_ids = params.get('surface_ids', [])
+
+        # Step 1: Load surfaces from cache
+        for surface_id in surface_ids:
+            cached_surface = surface_cache.get(surface_id)
+            if not cached_surface:
+                with self._lock:
+                    job['status'] = 'failed'
+                    job['error_message'] = f"Surface data not found in cache for ID: {surface_id}"
+                return
+            
+            # Convert lists back to numpy arrays for processing
+            vertices = np.array(cached_surface['vertices'])
+            faces = np.array(cached_surface['faces']) if cached_surface.get('faces') else None
+            surfaces_to_process.append({
+                'vertices': vertices,
+                'faces': faces,
+                'name': cached_surface.get('filename', surface_id)
+            })
+
+        # Step 2: Generate baseline surface if requested
+        if params.get('generate_base_surface') and surfaces_to_process:
+            with self._lock:
+                job['current_step'] = 'generating_baseline'
+                job['progress_percent'] = 25.0
+            
+            offset = params.get('base_surface_offset', 0)
+            # Use the first surface as the reference for baseline generation
+            reference_surface_vertices = surfaces_to_process[0]['vertices']
+            
+            try:
+                baseline_vertices = self.surface_processor.generate_base_surface(reference_surface_vertices, offset)
+                # The baseline is just points, so faces are None.
+                surfaces_to_process.insert(0, {'vertices': baseline_vertices, 'faces': None, 'name': 'Baseline'})
+            except Exception as e:
+                with self._lock:
+                    job['status'] = 'failed'
+                    job['error_message'] = f"Failed to generate baseline surface: {e}"
+                return
+
+        # --- Placeholder for further analysis ---
+        # Simulate work for other steps
+        time.sleep(2) 
+
+        with self._lock:
             job["status"] = "completed"
             job["progress_percent"] = 100.0
             job["current_step"] = "finished"
             job["completion_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            # In production, real results would be generated and cached here
-            # self._results_cache[analysis_id] = real_results
+            
+            # Store results for visualization
+            self._results_cache[analysis_id] = {
+                "surfaces": surfaces_to_process,
+                "analysis_metadata": {"status": "completed"}
+            }
 
     def get_results(self, analysis_id: str, include: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get analysis results with optional filtering. Returns None if not available."""
@@ -93,6 +137,7 @@ class AnalysisExecutor:
             }
             if job["status"] == "completed":
                 status["completion_time"] = job.get("completion_time")
+                status["results"] = self.get_results(analysis_id)
             if job["status"] == "failed":
                 status["error_message"] = job.get("error_message", "Unknown error")
             return status
