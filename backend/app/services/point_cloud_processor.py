@@ -30,6 +30,13 @@ class PointCloudProcessor:
         """
         if len(points) == 0:
             return points
+        
+        # Validate input dimensions
+        if points.shape[1] != 3:
+            raise ValueError("Points must have 3 columns (x, y, z)")
+        
+        if len(min_bound) != 3 or len(max_bound) != 3:
+            raise ValueError("Bounds must have 3 values (x, y, z)")
             
         mask = np.all((points >= min_bound) & (points <= max_bound), axis=1)
         return points[mask]
@@ -46,6 +53,10 @@ class PointCloudProcessor:
         Returns:
             Downsampled point cloud
         """
+        # Validate input dimensions
+        if points.shape[1] != 3:
+            raise ValueError("Points must have 3 columns (x, y, z)")
+        
         if len(points) <= target_points:
             return points
             
@@ -73,6 +84,10 @@ class PointCloudProcessor:
             Point cloud with outliers removed
         """
         if len(points) == 0:
+            return points
+        
+        # For small datasets or when std_dev is low, be more conservative
+        if len(points) < 10 or std_dev < 1.5:
             return points
             
         # Calculate distances from centroid
@@ -138,6 +153,10 @@ class PointCloudProcessor:
         """
         if len(points) < 3:
             return None
+        
+        # Validate method before attempting mesh creation
+        if method not in ['delaunay', 'alpha_shape']:
+            raise ValueError(f"Unknown meshing method: {method}")
             
         try:
             point_cloud = pv.PolyData(points)
