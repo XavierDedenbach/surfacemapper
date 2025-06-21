@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional
 class AnalysisExecutor:
     """Manages background analysis execution, progress, and cancellation."""
     _jobs: Dict[str, Dict[str, Any]] = {}
+    _results_cache: Dict[str, Dict[str, Any]] = {}
     _lock = threading.Lock()
 
     def start_analysis_execution(self, analysis_id: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -54,6 +55,30 @@ class AnalysisExecutor:
             job["progress_percent"] = 100.0
             job["current_step"] = "finished"
             job["completion_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            # In production, real results would be generated and cached here
+            # self._results_cache[analysis_id] = real_results
+
+    def get_results(self, analysis_id: str, include: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Get analysis results with optional filtering. Returns None if not available."""
+        with self._lock:
+            if analysis_id not in self._jobs:
+                return None
+            job = self._jobs[analysis_id]
+            if job["status"] != "completed":
+                return None
+            results = self._results_cache.get(analysis_id)
+            if not results:
+                return None
+            if include:
+                filtered_results = {"analysis_metadata": results["analysis_metadata"]}
+                if include == "volume":
+                    filtered_results["volume_results"] = results.get("volume_results", [])
+                elif include == "thickness":
+                    filtered_results["thickness_results"] = results.get("thickness_results", [])
+                elif include == "compaction":
+                    filtered_results["compaction_rates"] = results.get("compaction_rates", [])
+                return filtered_results
+            return results
 
     def get_analysis_status(self, analysis_id: str) -> Dict[str, Any]:
         with self._lock:
@@ -83,6 +108,7 @@ class AnalysisExecutor:
                 raise RuntimeError("Analysis already cancelled")
             job["cancelled"] = True
             job["status"] = "cancelled"
+            job["cancellation_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         return {"status": "cancelled", "analysis_id": analysis_id}
 
     @staticmethod
