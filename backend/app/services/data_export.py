@@ -16,10 +16,12 @@ class DataExporter:
             with open(file_path, "w") as f:
                 json.dump(results.model_dump(), f, indent=2)
         elif fmt == "excel":
-            with pd.ExcelWriter(file_path) as writer:
-                pd.DataFrame([vars(v) for v in results.volume_results]).to_excel(writer, sheet_name="Volume", index=False)
-                pd.DataFrame([vars(t) for t in results.thickness_results]).to_excel(writer, sheet_name="Thickness", index=False)
-                pd.DataFrame([vars(c) for c in results.compaction_results]).to_excel(writer, sheet_name="Compaction", index=False)
+            fmt = "xlsx"
+            if fmt == "xlsx":
+                with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+                    pd.DataFrame([vars(v) for v in results.volume_results]).to_excel(writer, sheet_name="Volume", index=False)
+                    pd.DataFrame([vars(t) for t in results.thickness_results]).to_excel(writer, sheet_name="Thickness", index=False)
+                    pd.DataFrame([vars(c) for c in results.compaction_results]).to_excel(writer, sheet_name="Compaction", index=False)
         else:
             raise ValueError(f"Unsupported export format: {fmt}")
         return file_path

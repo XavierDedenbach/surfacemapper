@@ -2,6 +2,8 @@
 Integration tests for API routes
 """
 import pytest
+import tempfile
+import os
 from fastapi.testclient import TestClient
 from unittest.mock import Mock, patch
 from app.main import app
@@ -10,6 +12,36 @@ from app.models.data_models import ProcessingRequest, GeoreferenceParams, Analys
 @pytest.fixture
 def client():
     return TestClient(app)
+
+@pytest.fixture
+def temp_ply_file():
+    """Create a temporary PLY file for testing"""
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.ply', delete=False) as f:
+        # Write a minimal PLY header
+        f.write("""ply
+format ascii 1.0
+element vertex 4
+property float x
+property float y
+property float z
+element face 1
+property list uchar int vertex_indices
+end_header
+0.0 0.0 0.0
+1.0 0.0 0.0
+0.0 1.0 0.0
+0.0 0.0 1.0
+3 0 1 2
+""")
+        temp_file_path = f.name
+    
+    yield temp_file_path
+    
+    # Clean up
+    try:
+        os.unlink(temp_file_path)
+    except OSError:
+        pass  # File might already be deleted
 
 class TestSurfaceRoutes:
     """Test cases for surface-related API routes"""
@@ -31,7 +63,7 @@ class TestSurfaceRoutes:
         assert "version" in data
     
     @patch('app.routes.surfaces.upload_surface')
-    def test_upload_surface(self, mock_upload, client):
+    def test_upload_surface(self, mock_upload, client, temp_ply_file):
         """Test surface upload endpoint"""
         # Mock the upload response
         mock_upload.return_value = {
@@ -40,8 +72,12 @@ class TestSurfaceRoutes:
             "status": "pending"
         }
         
+        # Read the temporary file content
+        with open(temp_ply_file, 'rb') as f:
+            file_content = f.read()
+        
         # Create a mock file upload
-        files = {"file": ("test.ply", b"mock file content", "application/octet-stream")}
+        files = {"file": ("test.ply", file_content, "application/octet-stream")}
         response = client.post("/api/v1/surfaces/upload", files=files)
         
         assert response.status_code == 200

@@ -8,10 +8,15 @@ import numpy as np
 from app.services.statistical_analysis import StatisticalAnalyzer
 from app.models.data_models import StatisticalAnalysis
 from fastapi import status
+from app.services.data_export import DataExporter
+import tempfile
+import os
+from datetime import datetime
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 executor = AnalysisExecutor()
 stat_analyzer = StatisticalAnalyzer()
+data_exporter = DataExporter()
 
 @router.post("/{analysis_id}/execute")
 async def execute_analysis(analysis_id: str, request: Request):
@@ -462,4 +467,77 @@ async def statistical_analysis(payload: dict = Body(...)):
         stats = stat_analyzer.calculate_statistics(values)
         return stats
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) 
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+@router.post("/export")
+async def export_data(payload: dict = Body(...)):
+    """Export data to various formats"""
+    # Validate required fields
+    data_type = payload.get("data_type")
+    data = payload.get("data")
+    export_format = payload.get("format")
+    
+    if not data_type:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing 'data_type'")
+    if not data:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing 'data'")
+    if not export_format:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing 'format'")
+    
+    # Validate format support for data type
+    if data_type == "analysis_results":
+        if export_format not in ["csv", "json", "excel"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Format '{export_format}' not supported for analysis results")
+    elif data_type == "statistical_data":
+        if export_format not in ["csv", "json"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Format '{export_format}' not supported for statistical data")
+    elif data_type == "surface_data":
+        if export_format not in ["ply", "obj", "stl", "xyz"]:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Format '{export_format}' not supported for surface data")
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unsupported data type: {data_type}")
+    
+    try:
+        # Generate filename
+        filename = payload.get("filename")
+        ext = export_format
+        if export_format == "excel":
+            ext = "xlsx"
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"{data_type}_{timestamp}.{ext}"
+        
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=False) as tmp_file:
+            file_path = tmp_file.name
+        
+        # Export data based on type
+        if data_type == "analysis_results":
+            from app.models.data_models import AnalysisResults
+            analysis_results = AnalysisResults(**data)
+            exported_path = data_exporter.export_analysis_results(
+                analysis_results, export_format, file_path, payload.get("metadata")
+            )
+        elif data_type == "statistical_data":
+            from app.models.data_models import StatisticalAnalysis
+            statistical_data = StatisticalAnalysis(**data)
+            exported_path = data_exporter.export_statistical_data(
+                statistical_data, export_format, file_path
+            )
+        elif data_type == "surface_data":
+            exported_path = data_exporter.export_surface_data(
+                data, export_format, file_path
+            )
+        
+        return {
+            "file_path": exported_path,
+            "format": export_format,
+            "data_type": data_type,
+            "filename": filename,
+            "export_timestamp": datetime.now().isoformat()
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Export failed: {str(e)}") 
