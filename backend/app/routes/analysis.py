@@ -5,9 +5,13 @@ from app.services.analysis_executor import AnalysisExecutor
 from app.services import thickness_calculator
 from app.services.coord_transformer import CoordinateTransformer
 import numpy as np
+from app.services.statistical_analysis import StatisticalAnalyzer
+from app.models.data_models import StatisticalAnalysis
+from fastapi import status
 
 router = APIRouter(prefix="/api/analysis", tags=["analysis"])
 executor = AnalysisExecutor()
+stat_analyzer = StatisticalAnalyzer()
 
 @router.post("/{analysis_id}/execute")
 async def execute_analysis(analysis_id: str, request: Request):
@@ -447,4 +451,15 @@ def _cluster_based_simplification(vertices, faces, target_vertices, preserve_bou
         seen_faces.add(face_key)
         new_faces.append(new_face)
     
-    return new_vertices, new_faces 
+    return new_vertices, new_faces
+
+@router.post("/statistics", response_model=StatisticalAnalysis)
+async def statistical_analysis(payload: dict = Body(...)):
+    values = payload.get("values")
+    if not isinstance(values, list):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Missing or invalid 'values' key")
+    try:
+        stats = stat_analyzer.calculate_statistics(values)
+        return stats
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) 
