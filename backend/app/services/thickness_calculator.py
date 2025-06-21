@@ -1141,4 +1141,477 @@ def _identify_risk_factors(distribution: dict, anomalies: dict) -> list:
     except:
         risk_factors.append("Unable to assess risk factors due to analysis error")
     
-    return risk_factors 
+    return risk_factors
+
+
+def validate_thickness_data(thicknesses: np.ndarray) -> dict:
+    """
+    Validate thickness data for quality and consistency.
+    
+    Args:
+        thicknesses: Array of thickness values
+        
+    Returns:
+        Dictionary with validation results
+    """
+    if len(thicknesses) == 0:
+        return {
+            'is_valid': False,
+            'error_count': 0,
+            'errors': ['empty_data'],
+            'warnings': []
+        }
+    
+    errors = []
+    warnings = []
+    error_count = 0
+    
+    # Check for negative values
+    negative_mask = thicknesses < 0
+    if np.any(negative_mask):
+        errors.append('negative_values')
+        error_count += np.sum(negative_mask)
+    
+    # Check for NaN values
+    nan_mask = np.isnan(thicknesses)
+    if np.any(nan_mask):
+        errors.append('nan_values')
+        error_count += np.sum(nan_mask)
+    
+    # Check for extreme values (outliers)
+    valid_mask = ~(negative_mask | nan_mask)
+    if np.any(valid_mask):
+        valid_thicknesses = thicknesses[valid_mask]
+        q1, q3 = np.percentile(valid_thicknesses, [25, 75])
+        iqr = q3 - q1
+        lower_bound = q1 - 3 * iqr
+        upper_bound = q3 + 3 * iqr
+        
+        extreme_mask = (valid_thicknesses < lower_bound) | (valid_thicknesses > upper_bound)
+        if np.any(extreme_mask):
+            errors.append('extreme_values')
+            error_count += np.sum(extreme_mask)
+    
+    # Check for zero values
+    zero_mask = thicknesses == 0
+    if np.any(zero_mask):
+        warnings.append('zero_values')
+    
+    # Check for lack of variation
+    if len(thicknesses) > 1:
+        if np.std(thicknesses) < 1e-6:
+            warnings.append('no_variation')
+    
+    # Check for too many identical values
+    unique_ratio = len(np.unique(thicknesses)) / len(thicknesses)
+    if unique_ratio < 0.1:  # Less than 10% unique values
+        warnings.append('low_precision')
+    
+    is_valid = len(errors) == 0
+    
+    return {
+        'is_valid': is_valid,
+        'error_count': error_count,
+        'errors': errors,
+        'warnings': warnings,
+        'total_points': len(thicknesses),
+        'valid_points': len(thicknesses) - error_count
+    }
+
+
+def detect_measurement_errors(thicknesses: np.ndarray) -> dict:
+    """
+    Detect measurement errors and inconsistencies in thickness data.
+    
+    Args:
+        thicknesses: Array of thickness values
+        
+    Returns:
+        Dictionary with error detection results
+    """
+    if len(thicknesses) < 10:
+        return {
+            'systematic_errors_detected': False,
+            'random_errors_detected': False,
+            'precision_issues_detected': False,
+            'error_count': 0,
+            'error_regions': [],
+            'precision_score': 1.0
+        }
+    
+    # Remove invalid values for analysis
+    valid_mask = (thicknesses > 0) & ~np.isnan(thicknesses)
+    valid_thicknesses = thicknesses[valid_mask]
+    
+    if len(valid_thicknesses) < 10:
+        return {
+            'systematic_errors_detected': False,
+            'random_errors_detected': False,
+            'precision_issues_detected': False,
+            'error_count': len(thicknesses) - len(valid_thicknesses),
+            'error_regions': [],
+            'precision_score': 0.0
+        }
+    
+    # Detect systematic errors using change point detection
+    systematic_errors_detected = False
+    error_regions = []
+    
+    # Simple change point detection using rolling statistics
+    window_size = min(50, len(valid_thicknesses) // 4)
+    if window_size > 10:
+        rolling_mean = np.convolve(valid_thicknesses, np.ones(window_size)/window_size, mode='valid')
+        
+        # Detect significant changes in mean
+        mean_threshold = 1.5 * np.std(rolling_mean)  # Reduced threshold for better sensitivity
+        change_points = np.where(np.abs(np.diff(rolling_mean)) > mean_threshold)[0]
+        
+        if len(change_points) > 0:
+            systematic_errors_detected = True
+            for cp in change_points:
+                error_regions.append({
+                    'start_index': cp,
+                    'end_index': cp + window_size,
+                    'change_magnitude': np.abs(np.diff(rolling_mean)[cp])
+                })
+    
+    # Alternative detection: check for significant mean differences between segments
+    if not systematic_errors_detected and len(valid_thicknesses) > 20:
+        # Split data into segments and compare means
+        segment_size = len(valid_thicknesses) // 4
+        segments = [valid_thicknesses[i:i+segment_size] for i in range(0, len(valid_thicknesses), segment_size)]
+        
+        if len(segments) >= 2:
+            segment_means = [np.mean(seg) for seg in segments if len(seg) > 0]
+            overall_mean = np.mean(valid_thicknesses)
+            overall_std = np.std(valid_thicknesses)
+            
+            # Check if any segment mean deviates significantly
+            for i, seg_mean in enumerate(segment_means):
+                if abs(seg_mean - overall_mean) > 1.0 * overall_std:  # 1 standard deviation threshold
+                    systematic_errors_detected = True
+                    error_regions.append({
+                        'start_index': i * segment_size,
+                        'end_index': min((i + 1) * segment_size, len(valid_thicknesses)),
+                        'change_magnitude': abs(seg_mean - overall_mean)
+                    })
+    
+    # Detect random errors using outlier detection
+    random_errors_detected = False
+    error_count = 0
+    
+    q1, q3 = np.percentile(valid_thicknesses, [25, 75])
+    iqr = q3 - q1
+    lower_bound = q1 - 2.5 * iqr
+    upper_bound = q3 + 2.5 * iqr
+    
+    outlier_mask = (valid_thicknesses < lower_bound) | (valid_thicknesses > upper_bound)
+    if np.any(outlier_mask):
+        random_errors_detected = True
+        error_count = np.sum(outlier_mask)
+    
+    # Detect precision issues
+    precision_issues_detected = False
+    precision_score = 1.0
+    
+    # Check for too many identical values
+    unique_ratio = len(np.unique(valid_thicknesses)) / len(valid_thicknesses)
+    if unique_ratio < 0.7:  # Less than 70% unique values (more sensitive)
+        precision_issues_detected = True
+        precision_score = unique_ratio
+    
+    # Check for rounding patterns
+    rounded_values_0 = np.round(valid_thicknesses, 0)
+    rounding_ratio_0 = np.sum(rounded_values_0 == valid_thicknesses) / len(valid_thicknesses)
+    if rounding_ratio_0 > 0.15:  # More than 15% are rounded to integer
+        precision_issues_detected = True
+        precision_score = min(precision_score, 0.5)
+    
+    rounded_values_1 = np.round(valid_thicknesses, 1)
+    rounding_ratio_1 = np.sum(rounded_values_1 == valid_thicknesses) / len(valid_thicknesses)
+    if rounding_ratio_1 > 0.5:  # More than 50% are rounded to 1 decimal
+        precision_issues_detected = True
+        precision_score = min(precision_score, 0.7)
+    
+    # Additional: check for high proportion of exactly integer values
+    int_mask = (valid_thicknesses == np.floor(valid_thicknesses))
+    if np.sum(int_mask) / len(valid_thicknesses) > 0.15:
+        precision_issues_detected = True
+        precision_score = min(precision_score, 0.5)
+    
+    total_errors = error_count + len(thicknesses) - len(valid_thicknesses)
+    
+    return {
+        'systematic_errors_detected': systematic_errors_detected,
+        'random_errors_detected': random_errors_detected,
+        'precision_issues_detected': precision_issues_detected,
+        'error_count': total_errors,
+        'error_regions': error_regions,
+        'precision_score': precision_score,
+        'outlier_count': error_count,
+        'invalid_count': len(thicknesses) - len(valid_thicknesses),
+        'total_errors': total_errors
+    }
+
+
+def calculate_thickness_quality_metrics(thicknesses: np.ndarray) -> dict:
+    """
+    Calculate comprehensive quality metrics for thickness data.
+    
+    Args:
+        thicknesses: Array of thickness values
+        
+    Returns:
+        Dictionary with quality metrics
+    """
+    if len(thicknesses) == 0:
+        return {
+            'overall_quality_score': 0.0,
+            'precision_score': 0.0,
+            'consistency_score': 0.0,
+            'coverage_score': 0.0,
+            'variance_score': 0.0,
+            'outlier_score': 0.0,
+            'distribution_score': 0.0
+        }
+    
+    # Remove invalid values
+    valid_mask = (thicknesses > 0) & ~np.isnan(thicknesses)
+    valid_thicknesses = thicknesses[valid_mask]
+    
+    if len(valid_thicknesses) == 0:
+        return {
+            'overall_quality_score': 0.0,
+            'precision_score': 0.0,
+            'consistency_score': 0.0,
+            'coverage_score': 0.0,
+            'variance_score': 0.0,
+            'outlier_score': 0.0,
+            'distribution_score': 0.0
+        }
+    
+    # Coverage score (percentage of valid data)
+    coverage_score = len(valid_thicknesses) / len(thicknesses)
+    
+    # Precision score (based on unique values and rounding)
+    unique_ratio = len(np.unique(valid_thicknesses)) / len(valid_thicknesses)
+    rounded_values = np.round(valid_thicknesses, 2)
+    rounding_ratio = np.sum(rounded_values == valid_thicknesses) / len(valid_thicknesses)
+    precision_score = unique_ratio * (1 - rounding_ratio * 0.5)
+    
+    # Consistency score (based on variance and outliers)
+    mean_thickness = np.mean(valid_thicknesses)
+    std_thickness = np.std(valid_thicknesses)
+    cv = std_thickness / mean_thickness if mean_thickness > 0 else 0
+    
+    # Lower CV is better for consistency
+    consistency_score = max(0, 1 - cv)
+    
+    # Variance score (appropriate amount of variation)
+    # Too little variance suggests measurement issues, too much suggests errors
+    optimal_cv = 0.2  # 20% coefficient of variation
+    cv_diff = abs(cv - optimal_cv)
+    variance_score = max(0, 1 - cv_diff / optimal_cv)
+    
+    # Outlier score (fewer outliers is better)
+    q1, q3 = np.percentile(valid_thicknesses, [25, 75])
+    iqr = q3 - q1
+    lower_bound = q1 - 1.5 * iqr
+    upper_bound = q3 + 1.5 * iqr
+    
+    outlier_mask = (valid_thicknesses < lower_bound) | (valid_thicknesses > upper_bound)
+    outlier_ratio = np.sum(outlier_mask) / len(valid_thicknesses)
+    outlier_score = max(0, 1 - 2 * outlier_ratio)  # Penalize outliers more strongly
+    
+    # Distribution score (how well it follows expected distribution)
+    # Check if distribution is roughly normal or log-normal
+    from scipy import stats
+    
+    # Test for normality
+    try:
+        _, normality_p = stats.normaltest(valid_thicknesses)
+        normality_score = min(1.0, normality_p * 10)
+    except:
+        normality_score = 0.5
+    
+    # Test for log-normality
+    try:
+        log_thicknesses = np.log(valid_thicknesses)
+        _, log_normality_p = stats.normaltest(log_thicknesses)
+        log_normality_score = min(1.0, log_normality_p * 10)
+    except:
+        log_normality_score = 0.5
+    
+    distribution_score = max(normality_score, log_normality_score)
+    
+    # Overall quality score (balanced weighted average)
+    weights = {
+        'coverage': 0.20,
+        'precision': 0.25,
+        'consistency': 0.20,
+        'variance': 0.15,
+        'outlier': 0.15,
+        'distribution': 0.05
+    }
+    
+    overall_quality_score = (
+        coverage_score * weights['coverage'] +
+        precision_score * weights['precision'] +
+        consistency_score * weights['consistency'] +
+        variance_score * weights['variance'] +
+        outlier_score * weights['outlier'] +
+        distribution_score * weights['distribution']
+    )
+    
+    # Clamp score to 0-1
+    overall_quality_score = max(0, min(1, overall_quality_score))
+    
+    return {
+        'overall_quality_score': overall_quality_score,
+        'precision_score': precision_score,
+        'consistency_score': consistency_score,
+        'coverage_score': coverage_score,
+        'variance_score': variance_score,
+        'outlier_score': outlier_score,
+        'distribution_score': distribution_score,
+        'coefficient_of_variation': cv,
+        'outlier_ratio': outlier_ratio,
+        'unique_ratio': unique_ratio
+    }
+
+
+def perform_thickness_quality_assurance(thicknesses: np.ndarray) -> dict:
+    """
+    Perform comprehensive quality assurance on thickness data.
+    
+    Args:
+        thicknesses: Array of thickness values
+        
+    Returns:
+        Dictionary with QA results and recommendations
+    """
+    # Run all quality checks
+    validation_results = validate_thickness_data(thicknesses)
+    error_detection_results = detect_measurement_errors(thicknesses)
+    quality_metrics = calculate_thickness_quality_metrics(thicknesses)
+    
+    # Assess overall quality
+    overall_score = quality_metrics['overall_quality_score']
+    
+    if overall_score >= 0.8:
+        quality_assessment = 'excellent'
+        passes_quality_check = True
+    elif overall_score >= 0.6:
+        quality_assessment = 'good'
+        passes_quality_check = True
+    elif overall_score >= 0.4:
+        quality_assessment = 'fair'
+        passes_quality_check = False
+    else:
+        quality_assessment = 'poor'
+        passes_quality_check = False
+    
+    # Generate recommendations
+    recommendations = []
+    
+    if validation_results['error_count'] > 0:
+        recommendations.append(f"Remove {validation_results['error_count']} invalid data points")
+    
+    if error_detection_results['systematic_errors_detected']:
+        recommendations.append("Investigate systematic measurement errors")
+    
+    if error_detection_results['random_errors_detected']:
+        recommendations.append("Review outlier detection and measurement procedures")
+    
+    if error_detection_results['precision_issues_detected']:
+        recommendations.append("Improve measurement precision and resolution")
+    
+    if quality_metrics['coverage_score'] < 0.9:
+        recommendations.append("Increase data coverage and reduce missing values")
+    
+    if quality_metrics['consistency_score'] < 0.7:
+        recommendations.append("Improve measurement consistency and calibration")
+    
+    if quality_metrics['variance_score'] < 0.6:
+        recommendations.append("Review measurement variability and sampling strategy")
+    
+    if not recommendations:
+        recommendations.append("Data quality is acceptable for analysis")
+    
+    return {
+        'validation_results': validation_results,
+        'error_detection_results': error_detection_results,
+        'quality_metrics': quality_metrics,
+        'quality_assessment': quality_assessment,
+        'overall_quality_score': overall_score,
+        'passes_quality_check': passes_quality_check,
+        'recommendations': recommendations
+    }
+
+
+def clean_thickness_data(thicknesses: np.ndarray, 
+                        remove_negative: bool = True,
+                        remove_nan: bool = True,
+                        remove_extreme: bool = True,
+                        extreme_threshold: float = 3.0) -> dict:
+    """
+    Clean thickness data by removing or correcting invalid values.
+    
+    Args:
+        thicknesses: Array of thickness values
+        remove_negative: Whether to remove negative values
+        remove_nan: Whether to remove NaN values
+        remove_extreme: Whether to remove extreme outliers
+        extreme_threshold: IQR multiplier for extreme value detection
+        
+    Returns:
+        Dictionary with cleaned data and cleaning summary
+    """
+    original_count = len(thicknesses)
+    cleaned_data = thicknesses.copy()
+    
+    cleaning_summary = {
+        'negative_values_removed': 0,
+        'nan_values_removed': 0,
+        'extreme_values_removed': 0,
+        'zero_values_removed': 0
+    }
+    
+    # Remove negative values
+    if remove_negative:
+        negative_mask = cleaned_data < 0
+        cleaning_summary['negative_values_removed'] = np.sum(negative_mask)
+        cleaned_data = cleaned_data[~negative_mask]
+    
+    # Remove NaN values
+    if remove_nan:
+        nan_mask = np.isnan(cleaned_data)
+        cleaning_summary['nan_values_removed'] = np.sum(nan_mask)
+        cleaned_data = cleaned_data[~nan_mask]
+    
+    # Remove extreme values
+    if remove_extreme and len(cleaned_data) > 10:
+        q1, q3 = np.percentile(cleaned_data, [25, 75])
+        iqr = q3 - q1
+        lower_bound = q1 - extreme_threshold * iqr
+        upper_bound = q3 + extreme_threshold * iqr
+        
+        extreme_mask = (cleaned_data < lower_bound) | (cleaned_data > upper_bound)
+        cleaning_summary['extreme_values_removed'] = np.sum(extreme_mask)
+        cleaned_data = cleaned_data[~extreme_mask]
+    
+    # Remove zero values (optional)
+    zero_mask = cleaned_data == 0
+    if np.any(zero_mask):
+        cleaning_summary['zero_values_removed'] = np.sum(zero_mask)
+        cleaned_data = cleaned_data[~zero_mask]
+    
+    removed_count = original_count - len(cleaned_data)
+    
+    return {
+        'cleaned_data': cleaned_data,
+        'cleaning_summary': cleaning_summary,
+        'removed_count': removed_count,
+        'original_count': original_count,
+        'retention_rate': len(cleaned_data) / original_count
+    } 

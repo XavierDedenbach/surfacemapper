@@ -22,7 +22,12 @@ from services.thickness_calculator import (
     detect_thickness_anomalies,
     analyze_thickness_clusters,
     analyze_thickness_spatial_patterns,
-    generate_thickness_insights
+    generate_thickness_insights,
+    validate_thickness_data,
+    detect_measurement_errors,
+    calculate_thickness_quality_metrics,
+    perform_thickness_quality_assurance,
+    clean_thickness_data
 )
 
 
@@ -694,6 +699,238 @@ class TestThicknessCalculation:
         
         assert elapsed < 2.0  # Must complete in <2 seconds
         assert 'anomalies' in anomalies
+    
+    def test_thickness_data_validation(self):
+        """Test thickness data validation and quality checks"""
+        # Create valid thickness data
+        valid_thicknesses = np.random.normal(5.0, 1.0, 100)
+        
+        # Create invalid data with various issues
+        invalid_negative = np.random.normal(5.0, 1.0, 50)
+        invalid_negative[0:10] = -1.0  # Negative values
+        
+        invalid_extreme = np.random.normal(5.0, 1.0, 50)
+        invalid_extreme[0:5] = 1000.0  # Extreme values
+        
+        invalid_nan = np.random.normal(5.0, 1.0, 50)
+        invalid_nan[0:10] = np.nan  # NaN values
+        
+        # Test validation
+        valid_result = validate_thickness_data(valid_thicknesses)
+        negative_result = validate_thickness_data(invalid_negative)
+        extreme_result = validate_thickness_data(invalid_extreme)
+        nan_result = validate_thickness_data(invalid_nan)
+        
+        # Valid data should pass
+        assert valid_result['is_valid'] == True
+        assert valid_result['error_count'] == 0
+        assert len(valid_result['errors']) == 0
+        
+        # Invalid data should be detected
+        assert negative_result['is_valid'] == False
+        assert negative_result['error_count'] > 0
+        assert len(negative_result['errors']) > 0
+        
+        assert extreme_result['is_valid'] == False
+        assert extreme_result['error_count'] > 0
+        
+        assert nan_result['is_valid'] == False
+        assert nan_result['error_count'] > 0
+    
+    def test_thickness_measurement_error_detection(self):
+        """Test detection of measurement errors and inconsistencies"""
+        # Create thickness data with known measurement errors
+        np.random.seed(42)
+        base_thicknesses = np.random.normal(5.0, 0.5, 200)
+        
+        # Add systematic errors
+        systematic_error = base_thicknesses.copy()
+        systematic_error[50:100] += 2.0  # Systematic offset
+        
+        # Add random measurement errors
+        random_errors = base_thicknesses.copy()
+        random_errors[0:20] += np.random.normal(0, 3.0, 20)  # Large random errors
+        
+        # Add precision errors (too many identical values)
+        precision_errors = base_thicknesses.copy()
+        precision_errors[100:150] = np.round(precision_errors[100:150], 0)  # Rounded to integers
+        
+        # Detect errors
+        systematic_result = detect_measurement_errors(systematic_error)
+        random_result = detect_measurement_errors(random_errors)
+        precision_result = detect_measurement_errors(precision_errors)
+        
+        # Should detect systematic errors
+        assert systematic_result['systematic_errors_detected'] == True
+        assert len(systematic_result['error_regions']) > 0
+        
+        # Should detect random errors
+        assert random_result['random_errors_detected'] == True
+        assert random_result['error_count'] > 0
+        
+        # Should detect precision issues
+        assert precision_result['precision_issues_detected'] == True
+        assert precision_result['precision_score'] < 0.8  # Lower precision score
+    
+    def test_thickness_quality_metrics(self):
+        """Test calculation of thickness quality metrics"""
+        # Create high-quality thickness data
+        high_quality = np.random.normal(5.0, 0.5, 1000)
+        
+        # Create low-quality thickness data
+        low_quality = np.concatenate([
+            np.random.normal(5.0, 0.5, 800),
+            np.random.normal(5.0, 3.0, 100),  # High variance
+            np.full(50, 5.0),  # Identical values
+            np.random.normal(5.0, 0.5, 50)
+        ])
+        
+        # Calculate quality metrics
+        high_metrics = calculate_thickness_quality_metrics(high_quality)
+        low_metrics = calculate_thickness_quality_metrics(low_quality)
+        
+        # High quality should have good metrics
+        assert high_metrics['overall_quality_score'] > 0.8
+        assert high_metrics['precision_score'] > 0.8
+        assert high_metrics['consistency_score'] > 0.8
+        assert high_metrics['coverage_score'] > 0.8
+        
+        # Low quality should have lower metrics than high quality
+        assert low_metrics['overall_quality_score'] < high_metrics['overall_quality_score']
+        
+        # Should provide detailed metrics
+        assert 'variance_score' in high_metrics
+        assert 'outlier_score' in high_metrics
+        assert 'distribution_score' in high_metrics
+    
+    def test_thickness_quality_assurance_workflow(self):
+        """Test complete quality assurance workflow"""
+        # Create mixed quality thickness data
+        np.random.seed(42)
+        thicknesses = np.concatenate([
+            np.random.normal(5.0, 0.5, 800),  # Good data
+            np.random.normal(5.0, 2.0, 100),  # High variance
+            np.full(50, 5.0),  # Identical values
+            np.random.normal(5.0, 0.5, 50)
+        ])
+        
+        # Add some errors
+        thicknesses[900:920] = -1.0  # Negative values
+        thicknesses[920:940] = np.nan  # NaN values
+        
+        # Run quality assurance workflow
+        qa_result = perform_thickness_quality_assurance(thicknesses)
+        
+        # Should provide comprehensive QA results
+        assert 'validation_results' in qa_result
+        assert 'error_detection_results' in qa_result
+        assert 'quality_metrics' in qa_result
+        assert 'quality_assessment' in qa_result
+        assert 'recommendations' in qa_result
+        assert 'passes_quality_check' in qa_result
+        
+        # Should detect issues
+        assert qa_result['validation_results']['error_count'] > 0
+        assert qa_result['error_detection_results']['total_errors'] > 0
+        
+        # Should provide recommendations
+        recommendations = qa_result['recommendations']
+        assert len(recommendations) > 0
+        assert all(isinstance(rec, str) for rec in recommendations)
+    
+    def test_thickness_data_cleaning(self):
+        """Test automatic data cleaning and correction"""
+        # Create dirty thickness data
+        np.random.seed(42)
+        dirty_data = np.random.normal(5.0, 1.0, 200)
+        
+        # Add various data quality issues
+        dirty_data[0:10] = -1.0  # Negative values
+        dirty_data[10:20] = np.nan  # NaN values
+        dirty_data[20:30] = 1000.0  # Extreme values
+        dirty_data[30:40] = 0.0  # Zero values
+        
+        # Clean the data
+        cleaned_result = clean_thickness_data(dirty_data)
+        
+        # Should provide cleaned data
+        assert 'cleaned_data' in cleaned_result
+        assert 'cleaning_summary' in cleaned_result
+        assert 'removed_count' in cleaned_result
+        
+        # Cleaned data should be valid
+        cleaned_data = cleaned_result['cleaned_data']
+        assert np.all(cleaned_data > 0)  # No negative values
+        assert not np.any(np.isnan(cleaned_data))  # No NaN values
+        assert np.all(cleaned_data < 100)  # No extreme values
+        
+        # Should provide cleaning summary
+        summary = cleaned_result['cleaning_summary']
+        assert 'negative_values_removed' in summary
+        assert 'nan_values_removed' in summary
+        assert 'extreme_values_removed' in summary
+    
+    def test_thickness_quality_control_edge_cases(self):
+        """Test quality control with edge cases"""
+        # Test with empty data
+        empty_result = validate_thickness_data(np.array([]))
+        assert empty_result['is_valid'] == False
+        assert 'empty_data' in empty_result['errors']
+        
+        # Test with single value
+        single_result = validate_thickness_data(np.array([5.0]))
+        assert single_result['is_valid'] == True
+        
+        # Test with all identical values
+        identical_result = validate_thickness_data(np.full(100, 5.0))
+        assert identical_result['is_valid'] == True
+        assert identical_result['warnings']  # Should warn about lack of variation
+        
+        # Test with all NaN values
+        all_nan_result = validate_thickness_data(np.full(100, np.nan))
+        assert all_nan_result['is_valid'] == False
+        assert all_nan_result['error_count'] == 100
+        
+        # Test with mixed valid/invalid data
+        mixed_data = np.array([1.0, 2.0, np.nan, 4.0, -1.0, 6.0])
+        mixed_result = validate_thickness_data(mixed_data)
+        assert mixed_result['is_valid'] == False
+        assert mixed_result['error_count'] == 2  # NaN and negative
+    
+    def test_thickness_quality_control_performance(self):
+        """Test performance of quality control functions"""
+        # Create large dataset
+        np.random.seed(42)
+        large_thicknesses = np.random.normal(5.0, 1.0, 10000)
+        
+        # Add some errors
+        large_thicknesses[0:100] = -1.0
+        large_thicknesses[100:200] = np.nan
+        
+        # Test validation performance
+        start_time = time.time()
+        validation_result = validate_thickness_data(large_thicknesses)
+        validation_elapsed = time.time() - start_time
+        
+        # Test error detection performance
+        start_time = time.time()
+        error_result = detect_measurement_errors(large_thicknesses)
+        error_elapsed = time.time() - start_time
+        
+        # Test quality metrics performance
+        start_time = time.time()
+        metrics_result = calculate_thickness_quality_metrics(large_thicknesses)
+        metrics_elapsed = time.time() - start_time
+        
+        # Should complete quickly
+        assert validation_elapsed < 1.0  # Must complete in <1 second
+        assert error_elapsed < 2.0  # Must complete in <2 seconds
+        assert metrics_elapsed < 1.0  # Must complete in <1 second
+        
+        # Should provide results
+        assert 'is_valid' in validation_result
+        assert 'error_count' in error_result
+        assert 'overall_quality_score' in metrics_result
 
 
 def create_test_surface_tin():
