@@ -151,4 +151,65 @@ class SurfaceProcessor:
                 return mesh.points, faces
         else:
             # No faces, cannot decimate
-            return vertices, None 
+            return vertices, None
+
+    def process_surfaces(self, surfaces_to_process, params):
+        """
+        Main processing pipeline for a list of surfaces.
+        This orchestrates triangulation, thickness, and volume calculations.
+        """
+        from .triangulation import Triangulator
+        from .thickness_calculator import ThicknessCalculator
+        from .volume_calculator import VolumeCalculator
+
+        triangulator = Triangulator()
+        thickness_calculator = ThicknessCalculator()
+        volume_calculator = VolumeCalculator()
+        
+        # Step 1: Ensure all surfaces have a mesh (triangulate if needed)
+        processed_surfaces = []
+        for surface_data in surfaces_to_process:
+            if 'faces' not in surface_data or surface_data['faces'] is None:
+                vertices = surface_data['vertices']
+                try:
+                    faces = triangulator.create_mesh(vertices)
+                    processed_surfaces.append({**surface_data, 'faces': faces})
+                except Exception as e:
+                    print(f"Warning: Could not triangulate surface {surface_data.get('name', 'N/A')}. Error: {e}")
+                    processed_surfaces.append({**surface_data, 'faces': np.empty((0, 3))})
+            else:
+                processed_surfaces.append(surface_data)
+
+        # Step 2: Calculate thickness and volume between adjacent layers
+        analysis_layers = []
+        for i in range(len(processed_surfaces) - 1):
+            lower_surface = processed_surfaces[i]
+            upper_surface = processed_surfaces[i+1]
+
+            # Calculate thickness
+            thickness_data = thickness_calculator.calculate_thickness_between_surfaces(
+                upper_surface['vertices'],
+                lower_surface['vertices']
+            )
+            thickness_stats = thickness_calculator.calculate_thickness_statistics(thickness_data)
+            
+            # Calculate volume
+            volume_result = volume_calculator.calculate_volume_difference(
+                lower_surface['vertices'],
+                upper_surface['vertices']
+            )
+
+            analysis_layers.append({
+                "layer_name": f"{lower_surface.get('name', 'Layer ' + str(i))} to {upper_surface.get('name', 'Layer ' + str(i+1))}",
+                "volume_cubic_yards": volume_result.volume_cubic_yards,
+                "avg_thickness_feet": thickness_stats.get('mean'),
+                "min_thickness_feet": thickness_stats.get('min'),
+                "max_thickness_feet": thickness_stats.get('max'),
+                "std_dev_thickness_feet": thickness_stats.get('std_dev')
+            })
+
+        # Final result structure for the frontend
+        return {
+            "surfaces": processed_surfaces,
+            "analysis_summary": analysis_layers
+        } 

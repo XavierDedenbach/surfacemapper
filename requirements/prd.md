@@ -73,40 +73,40 @@ This application will utilize a Python backend for all heavy-duty data processin
 ## 6. Functional Requirements
 
 ### 6.1. Surface Data Ingestion
-**FR-S1.1**: The system shall allow users to upload or specify the file paths for 1 to 4 .ply surface files.
+**FR-S1.1**: The system shall allow users to upload or specify the file paths for 1 to 5 .ply surface files.
 
 **FR-S1.1.1. Configuration File Upload**: To streamline setup, the system shall allow the user to upload a JSON file to pre-populate analysis parameters. The file must adhere to the following structure:
 ```json
 {
+  "orientation": 90,
   "layer_0": {
     "tonnage": 100,
     "georeference": {
-      "wgs84_lat": 37.774900,
-      "wgs84_lon": -122.419400,
-      "scaling_factor": 1.0,
-      "orientation_degrees": 90
+      "wgs84_lat": 37.7749,
+      "wgs84_lon": -122.4194,
+      "scaling_factor": 1.0
     }
   },
   "analysis_boundary": {
     "coordinates": [
-      { "lat": 37.773530, "lon": -122.421130 },
-      { "lat": 37.773530, "lon": -122.417670 },
-      { "lat": 37.776270, "lon": -122.417670 },
-      { "lat": 37.776270, "lon": -122.421130 }
+      { "lat": 37.77353, "lon": -122.42113 },
+      { "lat": 37.77353, "lon": -122.41767 },
+      { "lat": 37.77627, "lon": -122.41767 },
+      { "lat": 37.77627, "lon": -122.42113 }
     ]
   }
 }
 ```
-Uploading this file will populate the tonnage, georeferencing parameters for the first layer, and the analysis boundary coordinates.
+Uploading this file will populate the georeferencing parameters for the first layer, the top-level orientation, and the analysis boundary coordinates. Tonnage and other layer-specific data can also be defined.
 
 **FR-S1.2**: The backend shall validate that the provided files are valid .ply format and contain sufficient data (vertices, faces if applicable).
 
-**FR-S1.3**: The system shall require at least two surfaces for analysis. If only one .ply file is provided, the user must select the option to generate a "base level" surface (FR-S2.1) to fulfill this requirement. If neither a second .ply file nor the base level option is selected, the system shall prompt the user and prevent further processing.
+**FR-S1.3**: The system shall require at least two surfaces for analysis if not generating a baseline. If only one .ply file is provided for a multi-layer analysis, the user will be prompted to upload more files.
 
 ### 6.2. Base Surface Generation
-**FR-S2.1**: If fewer than the desired number of ply files are provided (e.g., only one ply file, but 2 surfaces are selected for analysis), the system shall provide an option to generate a "base level" flat surface.
+**FR-S2.1**: The system shall provide a "Generate Baseline Surface" checkbox. When selected, the UI will change to accept one "Reference Surface" instead of multiple layers. The georeferencing information for this reference surface is used to create a flat baseline.
 
-**FR-S2.2**: The base level surface shall be defined by a user-specified positive vertical offset (in feet) from the lowest Z-coordinate (elevation) of the first provided .ply surface within the defined analysis boundary.
+**FR-S2.2**: The base level surface shall be defined by a user-specified positive vertical offset (in feet) from the lowest Z-coordinate (elevation) of the provided "Reference Surface" within the defined analysis boundary.
 
 **FR-S2.3**: The generated base surface shall cover the entire horizontal extent (X, Y) of the defined analysis boundary.
 

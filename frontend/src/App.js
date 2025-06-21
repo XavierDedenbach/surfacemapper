@@ -78,14 +78,21 @@ function App() {
       const pollForResults = async () => {
         try {
           const result = await backendApi.getAnalysisResults(analysis_id);
-          if (result.status === 'completed') {
+          
+          if (!result) {
+            throw new Error("Received an empty response from the server while checking status.");
+          }
+
+          const status = result.status || (result.analysis_metadata && result.analysis_metadata.status);
+
+          if (status === 'completed') {
             setAnalysisResult(result);
             setWizardStep(2);
-          } else if (result.status === 'failed') {
-            throw new Error(result.error_message || 'Analysis failed on the server.');
-          } else {
-            // If still processing, poll again after a delay
-            setTimeout(pollForResults, 3000); // Poll every 3 seconds
+          } else if (status === 'failed') {
+            const errorMsg = (result.analysis_metadata && result.analysis_metadata.error_message) || 'Analysis failed on the server.';
+            throw new Error(errorMsg);
+          } else { // Catches 'processing' and other states, and continues polling.
+            setTimeout(pollForResults, 3000);
           }
         } catch (err) {
           setError(err);
@@ -108,6 +115,13 @@ function App() {
       // Do not reset form state, so user can fix input
   }
 
+  const getErrorMessage = (e) => {
+    if (typeof e === 'string') return e;
+    if (e && typeof e.message === 'string') return e.message;
+    if (typeof e === 'object' && e !== null) return JSON.stringify(e);
+    return 'An unknown error occurred.';
+  };
+
   const renderContent = () => {
     switch (wizardStep) {
       case 1:
@@ -122,7 +136,7 @@ function App() {
           return (
             <div className="flex flex-col items-center justify-center h-screen">
               <h2 className="text-2xl font-bold text-red-500 mb-4">Error</h2>
-              <p className="text-lg text-gray-700 mb-8">Processing failed: {error.message || 'An unknown error occurred.'}</p>
+              <p className="text-lg text-gray-700 mb-8">Processing failed: {getErrorMessage(error)}</p>
               <button onClick={handleReturnToSetup} className="bg-indigo-600 text-white py-2 px-4 rounded-md">
                 Return to Setup
               </button>

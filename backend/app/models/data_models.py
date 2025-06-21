@@ -25,7 +25,7 @@ class GeoreferenceParams(BaseModel):
     """Georeferencing parameters for a surface"""
     wgs84_lat: float = Field(..., ge=-90, le=90, description="WGS84 latitude of reference vertex")
     wgs84_lon: float = Field(..., ge=-180, le=180, description="WGS84 longitude of reference vertex")
-    orientation_degrees: float = Field(..., ge=0, le=360, description="Orientation angle in degrees clockwise from North")
+    orientation: float = Field(..., ge=0, le=360, description="Orientation angle in degrees clockwise from North")
     scaling_factor: float = Field(..., gt=0, description="Scaling factor to apply to coordinates")
 
 class AnalysisBoundary(BaseModel):
@@ -37,14 +37,19 @@ class TonnageInput(BaseModel):
     layer_index: int = Field(..., ge=0, description="Index of the layer (0-based)")
     tonnage: float = Field(..., gt=0, description="Tonnage in imperial tons")
 
+class AnalysisParameters(BaseModel):
+    """Container for various analysis parameters"""
+    tonnage_per_layer: Optional[List[TonnageInput]] = Field(None, description="Tonnage inputs for each layer")
+    base_surface_offset: Optional[float] = Field(None, description="Vertical offset for base surface in feet")
+
 class ProcessingRequest(BaseModel):
     """Request model for surface processing"""
-    surface_ids: List[str] = Field(..., min_length=1, max_length=4, description="List of uploaded surface IDs")
+    surface_ids: List[str] = Field(..., min_length=1, max_length=5, description="List of uploaded surface IDs")
     georeference_params: List[GeoreferenceParams] = Field(..., description="Georeferencing parameters for each surface")
     analysis_boundary: AnalysisBoundary = Field(..., description="Analysis boundary definition")
-    tonnage_inputs: Optional[List[TonnageInput]] = Field(None, description="Optional tonnage inputs for compaction calculation")
+    analysis_type: Optional[str] = None
+    params: AnalysisParameters
     generate_base_surface: bool = Field(False, description="Whether to generate a base surface")
-    base_surface_offset: Optional[float] = Field(None, gt=0, description="Vertical offset for base surface in feet")
 
     @field_validator('georeference_params')
     @classmethod

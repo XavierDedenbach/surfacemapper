@@ -109,6 +109,9 @@ async def get_analysis_results(analysis_id: str, include: Optional[str] = Query(
                 # Analysis doesn't exist
                 raise HTTPException(status_code=404, detail="Analysis not found")
         
+        if results is None:
+            raise HTTPException(status_code=500, detail="Analysis is marked as complete, but no results were found.")
+
         # Return results
         return results
         

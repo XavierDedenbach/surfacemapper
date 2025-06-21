@@ -72,8 +72,9 @@ class AnalysisExecutor:
                 job['current_step'] = 'generating_baseline'
                 job['progress_percent'] = 25.0
             
-            offset = params.get('base_surface_offset', 0)
-            # Use the first surface as the reference for baseline generation
+            offset = params.get('params', {}).get('base_surface_offset', 0)
+            # Use the first surface (Layer 0) as the reference for baseline generation.
+            # Do not remove it from the list.
             reference_surface_vertices = surfaces_to_process[0]['vertices']
             
             try:
@@ -86,21 +87,30 @@ class AnalysisExecutor:
                     job['error_message'] = f"Failed to generate baseline surface: {e}"
                 return
 
-        # --- Placeholder for further analysis ---
-        # Simulate work for other steps
-        time.sleep(2) 
-
-        with self._lock:
-            job["status"] = "completed"
-            job["progress_percent"] = 100.0
-            job["current_step"] = "finished"
-            job["completion_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        # Perform the actual analysis using the SurfaceProcessor
+        try:
+            with self._lock:
+                job['current_step'] = 'calculating_thickness_and_volume'
+                job['progress_percent'] = 75.0
             
-            # Store results for visualization
-            self._results_cache[analysis_id] = {
-                "surfaces": surfaces_to_process,
-                "analysis_metadata": {"status": "completed"}
-            }
+            analysis_results = self.surface_processor.process_surfaces(surfaces_to_process, params)
+
+            with self._lock:
+                job["status"] = "completed"
+                job["progress_percent"] = 100.0
+                job["current_step"] = "finished"
+                job["completion_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                
+                # Store results for visualization
+                self._results_cache[analysis_id] = {
+                    **analysis_results,
+                    "analysis_metadata": {"status": "completed"}
+                }
+        except Exception as e:
+            with self._lock:
+                job['status'] = 'failed'
+                job['error_message'] = f"Analysis processing failed: {e}"
+            return
 
     def get_results(self, analysis_id: str, include: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """Get analysis results with optional filtering. Returns None if not available."""

@@ -44,15 +44,22 @@ const backendApi = {
       return response.data;
     } catch (error) {
       console.error('Error starting analysis:', error);
+      let errorMessage;
       if (error.response) {
         const errorData = error.response.data;
-        const errorMessage = errorData.detail || JSON.stringify(errorData);
-        throw new Error(errorMessage);
+        if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        } else if (errorData && typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else {
+          errorMessage = JSON.stringify(errorData);
+        }
       } else if (error.request) {
-        throw new Error('No response from server. The backend might be down or unresponsive.');
+        errorMessage = 'No response from server. The backend might be down or unresponsive.';
       } else {
-        throw new Error(error.message || 'An unknown error occurred while setting up the request.');
+        errorMessage = error.message || 'An unknown error occurred while setting up the request.';
       }
+      throw new Error(errorMessage);
     }
   },
 
@@ -82,19 +89,27 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error('API Response Error:', error);
+    let errorMessage = 'An unknown error occurred';
+
     if (error.response) {
-      // Server responded with error status
-      const errorMessage = error.response.data?.detail || 
-                          error.response.data?.message || 
-                          `HTTP ${error.response.status}: ${error.response.statusText}`;
-      throw new Error(errorMessage);
+      const errorData = error.response.data;
+      if (typeof errorData === 'string') {
+        errorMessage = errorData;
+      } else if (errorData && typeof errorData.detail === 'string') {
+        errorMessage = errorData.detail;
+      } else if (errorData && typeof errorData.message === 'string') {
+        errorMessage = errorData.message;
+      } else {
+        errorMessage = `HTTP ${error.response.status}: ${error.response.statusText}`;
+      }
     } else if (error.request) {
-      // Network error
-      throw new Error('Network error: Unable to connect to backend server');
+      errorMessage = 'Network error: Unable to connect to backend server';
     } else {
-      // Other error
-      throw new Error(error.message || 'Unknown error occurred');
+      errorMessage = error.message || 'Unknown error occurred during request setup';
     }
+    
+    // Use Promise.reject to pass the error along the promise chain
+    return Promise.reject(new Error(errorMessage));
   }
 );
 
@@ -325,9 +340,9 @@ export const getSurfaceOverlap = async (surfaceIds) => {
  * Get volume calculation preview
  */
 export const getVolumePreview = async (surfaceIds, boundary) => {
-  const response = await api.post('/surfaces/volume-preview', {
+  const response = await api.post('/api/analysis/volume_preview', {
     surface_ids: surfaceIds,
-    boundary,
+    boundary: boundary
   });
   return response.data;
 };
