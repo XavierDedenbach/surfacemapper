@@ -299,65 +299,35 @@ class TestProcessingRequest:
     def test_processing_request_validation(self):
         """Test valid ProcessingRequest creation"""
         request = ProcessingRequest(
-            surface_files=["surface1.ply", "surface2.ply"],
-            georeference_params=[
-                GeoreferenceParams(
-                    wgs84_lat=40.7128,
-                    wgs84_lon=-74.0060,
-                    orientation_degrees=45.0,
-                    scaling_factor=1.5
-                ),
-                GeoreferenceParams(
-                    wgs84_lat=40.7128,
-                    wgs84_lon=-74.0060,
-                    orientation_degrees=45.0,
-                    scaling_factor=1.5
-                )
-            ],
-            analysis_boundary=AnalysisBoundary(
-                wgs84_coordinates=[
-                    (40.7128, -74.0060),
-                    (40.7128, -73.9960),
-                    (40.7028, -73.9960),
-                    (40.7028, -74.0060)
-                ]
-            ),
-            tonnage_inputs=[
-                TonnageInput(layer_index=0, tonnage=150.5)
-            ],
+            surface_ids=["surface1", "surface2"],
+            analysis_type="compaction",
             generate_base_surface=True,
-            base_surface_offset=10.0
+            georeference_params=[{"lat": 40.7128, "lon": -74.0060}],
+            analysis_boundary={"wgs84_coordinates": [[40.7128, -74.0060], [40.7128, -73.9960]]},
+            params={
+                "tonnage_per_layer": [{"layer_index": 0, "tonnage": 150.5}],
+                "base_surface_offset": 10.0
+            }
         )
         
-        assert len(request.surface_files) == 2
-        assert len(request.georeference_params) == 2
+        assert len(request.surface_ids) == 2
+        assert request.analysis_type == "compaction"
         assert request.generate_base_surface is True
-        assert request.base_surface_offset == 10.0
+        assert len(request.georeference_params) == 1
+        assert "wgs84_coordinates" in request.analysis_boundary
 
-    def test_processing_request_mismatched_files_and_params(self):
-        """Test mismatch between surface files and georeference params"""
+    def test_processing_request_invalid_analysis_type(self):
+        """Test invalid analysis type"""
         with pytest.raises(ValidationError) as exc_info:
             ProcessingRequest(
-                surface_files=["surface1.ply", "surface2.ply"],
-                georeference_params=[
-                    GeoreferenceParams(
-                        wgs84_lat=40.7128,
-                        wgs84_lon=-74.0060,
-                        orientation_degrees=45.0,
-                        scaling_factor=1.5
-                    )
-                    # Missing second georeference params
-                ],
-                analysis_boundary=AnalysisBoundary(
-                    wgs84_coordinates=[
-                        (40.7128, -74.0060),
-                        (40.7128, -73.9960),
-                        (40.7028, -73.9960),
-                        (40.7028, -74.0060)
-                    ]
-                )
+                surface_ids=["surface1"],
+                analysis_type="invalid_type",
+                generate_base_surface=False,
+                georeference_params=[],
+                analysis_boundary={},
+                params={}
             )
-        assert "Number of georeference parameters (1) must match number of surface files (2)" in str(exc_info.value)
+        assert "Analysis type must be 'compaction', 'volume', or 'thickness'" in str(exc_info.value)
 
 
 class TestProcessingResponse:

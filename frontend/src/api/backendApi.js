@@ -67,6 +67,232 @@ const backendApi = {
     const response = await api.get(`/api/analysis/${jobId}/results`);
     return response.data;
   },
+
+  /**
+   * Get processing status
+   */
+  getProcessingStatus: async (jobId) => {
+    const response = await api.get(`/api/analysis/${jobId}/status`);
+    return response.data;
+  },
+
+  /**
+   * Get point analysis data for interactive 3D visualization
+   */
+  getPointAnalysis: async (x, y, coordinateSystem = 'utm') => {
+    const response = await api.post(`/api/analysis/point_query`, {
+      x,
+      y,
+      coordinate_system: coordinateSystem,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get surface visualization data (mesh data for Three.js)
+   */
+  getSurfaceVisualization: async (surfaceIds, levelOfDetail = 'medium') => {
+    const response = await api.post('/api/analysis/3d-visualization', {
+      surface_ids: surfaceIds,
+      level_of_detail: levelOfDetail,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get 3D mesh data for specific surface
+   */
+  getSurfaceMesh: async (analysisId, surfaceIndex, levelOfDetail = 'medium') => {
+    const response = await api.get(`/api/analysis/${analysisId}/surface/${surfaceIndex}/mesh`, {
+      params: { level_of_detail: levelOfDetail },
+    });
+    return response.data;
+  },
+
+  /**
+   * Export analysis results
+   */
+  exportResults: async (analysisId, format = 'json') => {
+    const response = await api.get(`/api/analysis/${analysisId}/export`, {
+      params: { format },
+      headers: {
+        'Accept': format === 'csv' ? 'text/csv' : 'application/json',
+      },
+      responseType: format === 'csv' ? 'text' : 'json',
+    });
+    return response.data;
+  },
+
+  /**
+   * Get system health status
+   */
+  getHealthStatus: async () => {
+    const response = await api.get('/health');
+    return response.data;
+  },
+
+  /**
+   * Get API documentation
+   */
+  getApiDocs: async () => {
+    const response = await api.get('/docs');
+    return response.data;
+  },
+
+  /**
+   * Validate PLY file
+   */
+  validatePlyFile: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await api.post('/api/surfaces/validate', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get supported coordinate systems
+   */
+  getSupportedCoordinateSystems: async () => {
+    const response = await api.get('/api/surfaces/coordinate-systems');
+    return response.data;
+  },
+
+  /**
+   * Transform coordinates
+   */
+  transformCoordinates: async (coordinates, fromSystem, toSystem) => {
+    const response = await api.post('/surfaces/coordinate-transform', {
+      coordinates,
+      from_system: fromSystem,
+      to_system: toSystem,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get processing configuration
+   */
+  getProcessingConfig: async () => {
+    const response = await api.get('/config/processing');
+    return response.data;
+  },
+
+  /**
+   * Update processing configuration
+   */
+  updateProcessingConfig: async (config) => {
+    const response = await api.put('/config/processing', config);
+    return response.data;
+  },
+
+  /**
+   * Get processing history
+   */
+  getProcessingHistory: async (limit = 10, offset = 0) => {
+    const response = await api.get('/surfaces/history', {
+      params: { limit, offset },
+    });
+    return response.data;
+  },
+
+  /**
+   * Delete processing job
+   */
+  deleteProcessingJob: async (jobId) => {
+    const response = await api.delete(`/surfaces/job/${jobId}`);
+    return response.data;
+  },
+
+  /**
+   * Retry processing job
+   */
+  retryProcessingJob: async (jobId) => {
+    const response = await api.post(`/surfaces/job/${jobId}/retry`);
+    return response.data;
+  },
+
+  /**
+   * Get processing stats
+   */
+  getProcessingStats: async () => {
+    const response = await api.get('/surfaces/stats');
+    return response.data;
+  },
+
+  /**
+   * Batch upload surfaces
+   */
+  batchUploadSurfaces: async (files) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file, file.name);
+    });
+
+    const response = await api.post('/surfaces/batch-upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  /**
+   * Get surface metadata
+   */
+  getSurfaceMetadata: async (surfaceId) => {
+    const response = await api.get(`/surfaces/${surfaceId}/metadata`);
+    return response.data;
+  },
+
+  /**
+   * Update surface metadata
+   */
+  updateSurfaceMetadata: async (surfaceId, metadata) => {
+    const response = await api.put(`/surfaces/${surfaceId}/metadata`, metadata);
+    return response.data;
+  },
+
+  /**
+   * Delete a surface
+   */
+  deleteSurface: async (surfaceId) => {
+    const response = await api.delete(`/surfaces/${surfaceId}`);
+    return response.data;
+  },
+
+  /**
+   * Validate analysis boundary
+   */
+  validateAnalysisBoundary: async (boundary) => {
+    const response = await api.post('/surfaces/validate-boundary', boundary);
+    return response.data;
+  },
+
+  /**
+   * Analyze surface overlap
+   */
+  getSurfaceOverlap: async (surfaceIds) => {
+    const response = await api.post('/surfaces/overlap-analysis', {
+      surface_ids: surfaceIds,
+    });
+    return response.data;
+  },
+
+  /**
+   * Get volume calculation preview
+   */
+  getVolumePreview: async (surfaceIds, boundary) => {
+    const response = await api.post('/surfaces/volume-preview', {
+      surface_ids: surfaceIds,
+      boundary: boundary,
+    });
+    return response.data;
+  },
 };
 
 // Request interceptor for logging and authentication
@@ -113,238 +339,4 @@ api.interceptors.response.use(
   }
 );
 
-/**
- * Process surfaces for analysis
- */
-export const processSurfaces = async (processingRequest) => {
-  const response = await api.post('/api/analysis/start', processingRequest);
-  return response.data;
-};
-
-/**
- * Get processing status
- */
-export const getProcessingStatus = async (jobId) => {
-  const response = await api.get(`/api/analysis/${jobId}/status`);
-  return response.data;
-};
-
-/**
- * Get point analysis data for interactive 3D visualization
- */
-export const getPointAnalysis = async (x, y, coordinateSystem = 'utm') => {
-  const response = await api.post(`/api/analysis/point_query`, {
-    x,
-    y,
-    coordinate_system: coordinateSystem,
-  });
-  return response.data;
-};
-
-/**
- * Get surface visualization data (mesh data for Three.js)
- */
-export const getSurfaceVisualization = async (surfaceIds, levelOfDetail = 'medium') => {
-  const response = await api.post('/api/analysis/3d-visualization', {
-    surface_ids: surfaceIds,
-    level_of_detail: levelOfDetail,
-  });
-  return response.data;
-};
-
-/**
- * Get 3D mesh data for specific surface
- */
-export const getSurfaceMesh = async (analysisId, surfaceIndex, levelOfDetail = 'medium') => {
-  const response = await api.get(`/api/analysis/${analysisId}/surface/${surfaceIndex}/mesh`, {
-    params: { level_of_detail: levelOfDetail },
-  });
-  return response.data;
-};
-
-/**
- * Export analysis results
- */
-export const exportResults = async (analysisId, format = 'json') => {
-  const response = await api.get(`/api/analysis/${analysisId}/export`, {
-    params: { format },
-    headers: {
-      'Accept': format === 'csv' ? 'text/csv' : 'application/json',
-    },
-    responseType: format === 'csv' ? 'text' : 'json',
-  });
-  return response.data;
-};
-
-/**
- * Get system health status
- */
-export const getHealthStatus = async () => {
-  const response = await api.get('/health');
-  return response.data;
-};
-
-/**
- * Get API documentation
- */
-export const getApiDocs = async () => {
-  const response = await api.get('/docs');
-  return response.data;
-};
-
-/**
- * Validate PLY file
- */
-export const validatePlyFile = async (file) => {
-  const formData = new FormData();
-  formData.append('file', file);
-
-  const response = await api.post('/api/surfaces/validate', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-  return response.data;
-};
-
-/**
- * Get supported coordinate systems
- */
-export const getSupportedCoordinateSystems = async () => {
-  const response = await api.get('/api/surfaces/coordinate-systems');
-  return response.data;
-};
-
-/**
- * Transform coordinates
- */
-export const transformCoordinates = async (coordinates, fromSystem, toSystem) => {
-  const response = await api.post('/surfaces/coordinate-transform', {
-    coordinates,
-    from_system: fromSystem,
-    to_system: toSystem,
-  });
-  return response.data;
-};
-
-/**
- * Get processing configuration
- */
-export const getProcessingConfig = async () => {
-  const response = await api.get('/config/processing');
-  return response.data;
-};
-
-/**
- * Update processing configuration
- */
-export const updateProcessingConfig = async (config) => {
-  const response = await api.put('/config/processing', config);
-  return response.data;
-};
-
-/**
- * Get processing history
- */
-export const getProcessingHistory = async (limit = 10, offset = 0) => {
-  const response = await api.get('/surfaces/history', {
-    params: { limit, offset },
-  });
-  return response.data;
-};
-
-/**
- * Delete processing job
- */
-export const deleteProcessingJob = async (jobId) => {
-  const response = await api.delete(`/surfaces/job/${jobId}`);
-  return response.data;
-};
-
-/**
- * Retry processing job
- */
-export const retryProcessingJob = async (jobId) => {
-  const response = await api.post(`/surfaces/job/${jobId}/retry`);
-  return response.data;
-};
-
-/**
- * Get processing statistics
- */
-export const getProcessingStats = async () => {
-  const response = await api.get('/surfaces/stats');
-  return response.data;
-};
-
-/**
- * Batch upload surfaces
- */
-export const batchUploadSurfaces = async (files) => {
-  const formData = new FormData();
-  files.forEach((file, index) => {
-    formData.append(`files`, file);
-  });
-
-  const response = await api.post('/surfaces/batch-upload', formData, {
-    headers: {
-      'Content-Type': 'multipart/form-data',
-    },
-  });
-  return response.data;
-};
-
-/**
- * Get surface metadata
- */
-export const getSurfaceMetadata = async (surfaceId) => {
-  const response = await api.get(`/surfaces/${surfaceId}/metadata`);
-  return response.data;
-};
-
-/**
- * Update surface metadata
- */
-export const updateSurfaceMetadata = async (surfaceId, metadata) => {
-  const response = await api.put(`/surfaces/${surfaceId}/metadata`, metadata);
-  return response.data;
-};
-
-/**
- * Delete surface
- */
-export const deleteSurface = async (surfaceId) => {
-  const response = await api.delete(`/surfaces/${surfaceId}`);
-  return response.data;
-};
-
-/**
- * Get analysis boundary validation
- */
-export const validateAnalysisBoundary = async (boundary) => {
-  const response = await api.post('/surfaces/validate-boundary', boundary);
-  return response.data;
-};
-
-/**
- * Get surface overlap analysis
- */
-export const getSurfaceOverlap = async (surfaceIds) => {
-  const response = await api.post('/surfaces/overlap-analysis', {
-    surface_ids: surfaceIds,
-  });
-  return response.data;
-};
-
-/**
- * Get volume calculation preview
- */
-export const getVolumePreview = async (surfaceIds, boundary) => {
-  const response = await api.post('/api/analysis/volume_preview', {
-    surface_ids: surfaceIds,
-    boundary: boundary
-  });
-  return response.data;
-};
-
-export default backendApi; 
+export default backendApi;

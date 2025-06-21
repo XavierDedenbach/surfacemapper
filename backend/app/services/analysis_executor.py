@@ -21,12 +21,16 @@ class AnalysisExecutor:
                 job = self._jobs[analysis_id]
                 if job["status"] in ("running", "pending"):
                     raise RuntimeError("Analysis already running")
+            
+            # Handle new frontend payload structure
+            surface_count = len(params.get('surface_ids', [])) if params else 0
+            
             job = {
                 "status": "running",
                 "progress_percent": 0.0,
                 "current_step": "initializing",
                 "cancelled": False,
-                "estimated_duration": self.calculate_estimated_duration(len(params.get('surface_ids', []))),
+                "estimated_duration": self.calculate_estimated_duration(surface_count),
                 "start_time": time.time(),
                 "params": params or {},
                 "thread": None
@@ -46,6 +50,7 @@ class AnalysisExecutor:
             job = self._jobs[analysis_id]
             params = job['params']
             surfaces_to_process = []
+            # Handle new frontend payload structure
             surface_ids = params.get('surface_ids', [])
 
         # Step 1: Load surfaces from cache
@@ -72,14 +77,15 @@ class AnalysisExecutor:
                 job['current_step'] = 'generating_baseline'
                 job['progress_percent'] = 25.0
             
-            offset = params.get('params', {}).get('base_surface_offset', 0)
-            # Use the first surface (Layer 0) as the reference for baseline generation.
-            # Do not remove it from the list.
+            # Get base surface offset from params
+            base_surface_offset = params.get('params', {}).get('base_surface_offset', 0)
+            
+            # Use the first surface as the reference for baseline generation
             reference_surface_vertices = surfaces_to_process[0]['vertices']
             
             try:
-                baseline_vertices = self.surface_processor.generate_base_surface(reference_surface_vertices, offset)
-                # The baseline is just points, so faces are None.
+                baseline_vertices = self.surface_processor.generate_base_surface(reference_surface_vertices, base_surface_offset)
+                # The baseline is just points, so faces are None
                 surfaces_to_process.insert(0, {'vertices': baseline_vertices, 'faces': None, 'name': 'Baseline'})
             except Exception as e:
                 with self._lock:
@@ -93,7 +99,15 @@ class AnalysisExecutor:
                 job['current_step'] = 'calculating_thickness_and_volume'
                 job['progress_percent'] = 75.0
             
-            analysis_results = self.surface_processor.process_surfaces(surfaces_to_process, params)
+            # Transform the new params structure to what SurfaceProcessor expects
+            processing_params = {
+                'method': 'ground_truth' if params.get('analysis_type') == 'compaction' else 'layer_cake',
+                'grid_resolution': 1.0,  # Default value
+                'boundary': params.get('analysis_boundary', {}),
+                'tonnage_per_layer': params.get('params', {}).get('tonnage_per_layer', [])
+            }
+            
+            analysis_results = self.surface_processor.process_surfaces(surfaces_to_process, processing_params)
 
             with self._lock:
                 job["status"] = "completed"

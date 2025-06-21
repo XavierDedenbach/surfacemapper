@@ -177,7 +177,7 @@ class TestAnalysisExecution:
             
             response = client.post(f"/api/analysis/{analysis_id}/cancel")
             assert response.status_code == 400
-                assert "already completed" in response.json()["error"].lower()
+            assert "already completed" in response.json()["error"].lower()
     
     
     def test_analysis_cancellation_already_cancelled(self, client):
@@ -198,7 +198,7 @@ class TestAnalysisExecution:
             
             response = client.post(f"/api/analysis/{analysis_id}/cancel")
             assert response.status_code == 400
-                assert "already cancelled" in response.json()["error"].lower()
+            assert "already cancelled" in response.json()["error"].lower()
     
     
     def test_analysis_execution_with_parameters(self, client):

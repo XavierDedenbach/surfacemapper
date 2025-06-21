@@ -5,6 +5,8 @@ import numpy as np
 from typing import List, Tuple, Optional
 from ..utils.ply_parser import PLYParser
 import pyvista as pv
+from . import triangulation, thickness_calculator
+from .volume_calculator import VolumeCalculator
 
 class SurfaceProcessor:
     """
@@ -158,21 +160,18 @@ class SurfaceProcessor:
         Main processing pipeline for a list of surfaces.
         This orchestrates triangulation, thickness, and volume calculations.
         """
-        from .triangulation import Triangulator
-        from .thickness_calculator import ThicknessCalculator
-        from .volume_calculator import VolumeCalculator
-
-        triangulator = Triangulator()
-        thickness_calculator = ThicknessCalculator()
-        volume_calculator = VolumeCalculator()
         
+        volume_calculator = VolumeCalculator()
+
         # Step 1: Ensure all surfaces have a mesh (triangulate if needed)
         processed_surfaces = []
         for surface_data in surfaces_to_process:
             if 'faces' not in surface_data or surface_data['faces'] is None:
                 vertices = surface_data['vertices']
                 try:
-                    faces = triangulator.create_mesh(vertices)
+                    # Use the triangulation function directly
+                    delaunay_result = triangulation.create_delaunay_triangulation(vertices[:, :2])
+                    faces = delaunay_result.simplices
                     processed_surfaces.append({**surface_data, 'faces': faces})
                 except Exception as e:
                     print(f"Warning: Could not triangulate surface {surface_data.get('name', 'N/A')}. Error: {e}")
@@ -182,9 +181,18 @@ class SurfaceProcessor:
 
         # Step 2: Calculate thickness and volume between adjacent layers
         analysis_layers = []
+        volume_results = []
+        thickness_results = []
+        compaction_results = []
+        
+        # Get tonnage data for compaction calculations
+        tonnage_per_layer = params.get('tonnage_per_layer', [])
+        tonnage_dict = {item['layer_index']: item['tonnage'] for item in tonnage_per_layer}
+        
         for i in range(len(processed_surfaces) - 1):
             lower_surface = processed_surfaces[i]
             upper_surface = processed_surfaces[i+1]
+            layer_name = f"{lower_surface.get('name', 'Layer ' + str(i))} to {upper_surface.get('name', 'Layer ' + str(i+1))}"
 
             # Calculate thickness
             thickness_data = thickness_calculator.calculate_thickness_between_surfaces(
@@ -199,8 +207,37 @@ class SurfaceProcessor:
                 upper_surface['vertices']
             )
 
+            # Calculate compaction rate if tonnage is available
+            compaction_rate = None
+            tonnage_used = tonnage_dict.get(i, None)
+            if tonnage_used and volume_result.volume_cubic_yards > 0:
+                compaction_rate = tonnage_used / volume_result.volume_cubic_yards
+
+            # Store results in the expected format
+            volume_results.append({
+                "layer_designation": layer_name,
+                "volume_cubic_yards": volume_result.volume_cubic_yards,
+                "confidence_interval": None,
+                "uncertainty": None
+            })
+            
+            thickness_results.append({
+                "layer_designation": layer_name,
+                "average_thickness_feet": thickness_stats.get('mean', 0),
+                "min_thickness_feet": thickness_stats.get('min', 0),
+                "max_thickness_feet": thickness_stats.get('max', 0),
+                "std_dev_thickness_feet": thickness_stats.get('std_dev', 0),
+                "confidence_interval": None
+            })
+            
+            compaction_results.append({
+                "layer_designation": layer_name,
+                "compaction_rate_lbs_per_cubic_yard": compaction_rate,
+                "tonnage_used": tonnage_used
+            })
+
             analysis_layers.append({
-                "layer_name": f"{lower_surface.get('name', 'Layer ' + str(i))} to {upper_surface.get('name', 'Layer ' + str(i+1))}",
+                "layer_name": layer_name,
                 "volume_cubic_yards": volume_result.volume_cubic_yards,
                 "avg_thickness_feet": thickness_stats.get('mean'),
                 "min_thickness_feet": thickness_stats.get('min'),
@@ -211,5 +248,16 @@ class SurfaceProcessor:
         # Final result structure for the frontend
         return {
             "surfaces": processed_surfaces,
-            "analysis_summary": analysis_layers
+            "analysis_summary": analysis_layers,
+            "volume_results": volume_results,
+            "thickness_results": thickness_results,
+            "compaction_results": compaction_results,
+            "surface_tins": [surface.get('faces', []) for surface in processed_surfaces],
+            "surface_names": [surface.get('name', f'Surface {i}') for i, surface in enumerate(processed_surfaces)],
+            "georef": {
+                "lat": 0.0,  # Default values - should be extracted from georeference_params
+                "lon": 0.0,
+                "orientation": 0.0,
+                "scale": 1.0
+            }
         } 
