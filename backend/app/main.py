@@ -72,7 +72,7 @@ app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
-    return {"status": "healthy", "service": "Surface Mapper Backend API"}
+    return {"status": "healthy", "service": "surface-mapper-backend"}
 
 @app.get("/")
 async def root():

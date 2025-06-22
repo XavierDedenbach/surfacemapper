@@ -6,7 +6,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '/',
+  baseURL: 'http://localhost:8081',
   headers: {
     'Content-Type': 'application/json',
   },
@@ -63,9 +63,17 @@ const backendApi = {
     }
   },
 
-  getAnalysisResults: async (jobId) => {
-    const response = await api.get(`/api/analysis/${jobId}/results`);
-    return response.data;
+  getAnalysisResults: async (analysisId) => {
+    try {
+      const response = await api.get(`/api/analysis/${analysisId}/results`);
+      return response.data;
+    } catch (error) {
+      if (error.response && error.response.status === 202) {
+        return error.response.data;
+      }
+      console.error('Error fetching analysis results:', error.response ? error.response.data : error.message);
+      throw error;
+    }
   },
 
   /**
@@ -291,6 +299,11 @@ const backendApi = {
       surface_ids: surfaceIds,
       boundary: boundary,
     });
+    return response.data;
+  },
+
+  getAnalysisStatus: async (analysisId) => {
+    const response = await api.get(`/api/analysis/${analysisId}/status`);
     return response.data;
   },
 };

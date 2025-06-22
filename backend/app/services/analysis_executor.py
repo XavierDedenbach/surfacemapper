@@ -42,13 +42,20 @@ class AnalysisExecutor:
             # Update job status to running
             self._update_job_status(analysis_id, "running", 10.0, "loading_surfaces")
             
-            # Execute analysis (same logic as current _run_analysis)
+            # This will now set the result cache and determine the final status
             self._execute_analysis_logic(analysis_id, params)
             
-            # Update job status to completed
-            self._update_job_status(analysis_id, "completed", 100.0, "finished")
-            logger.info(f"[{analysis_id}] Background task analysis completed successfully")
+            # Retrieve the final status from the result cache
+            final_status = self._results_cache.get(analysis_id, {}).get("analysis_metadata", {}).get("status", "failed")
             
+            # Update the main job status to completed or failed
+            if final_status == "completed":
+                self._update_job_status(analysis_id, "completed", 100.0, "finished")
+                logger.info(f"[{analysis_id}] Background task analysis completed successfully")
+            else:
+                # If it's still processing, we let the polling continue. If it failed inside, it will be marked.
+                logger.info(f"[{analysis_id}] Analysis logic finished, but results not ready. Final status: {final_status}")
+
         except Exception as e:
             logger.error(f"[{analysis_id}] Background task analysis failed: {e}", exc_info=True)
             self._update_job_status(analysis_id, "failed", 0.0, "error", str(e))
@@ -71,6 +78,10 @@ class AnalysisExecutor:
         # Copy the entire analysis logic from _run_analysis method
         # but remove all threading-specific code and locks
         # This includes surface loading, processing, and result caching
+        
+        # Handle None params
+        if params is None:
+            params = {}
         
         surface_ids = params.get('surface_ids', [])
         logger.info(f"[{analysis_id}] Loading {len(surface_ids)} surfaces from cache")
@@ -103,6 +114,36 @@ class AnalysisExecutor:
             progress = 20.0 + (i / len(surface_ids)) * 30.0
             self._update_job_status(analysis_id, "running", progress, f"loaded_surface_{i+1}")
         
+        # Check if we need to generate a baseline surface
+        generate_base_surface = params.get('generate_base_surface', False)
+        if generate_base_surface and len(surfaces_to_process) == 1:
+            logger.info(f"[{analysis_id}] Generating baseline surface 1 foot below minimum elevation")
+            self._update_job_status(analysis_id, "running", 45.0, "generating_baseline")
+            
+            # Get the first (and only) surface
+            first_surface = surfaces_to_process[0]
+            vertices = first_surface['vertices']
+            
+            # Find minimum Z coordinate
+            min_z = np.min(vertices[:, 2])
+            baseline_z = min_z - 1.0  # 1 foot below minimum
+            
+            # Create baseline surface with same X,Y coordinates but flat Z at baseline_z
+            baseline_vertices = vertices.copy()
+            baseline_vertices[:, 2] = baseline_z
+            
+            # Create baseline surface data
+            baseline_surface = {
+                "id": f"baseline_{first_surface['id']}",
+                "name": "Baseline Surface (1ft below minimum)",
+                "vertices": baseline_vertices,
+                "faces": first_surface['faces']  # Use same faces as original surface
+            }
+            
+            # Add baseline surface to the beginning of the list
+            surfaces_to_process.insert(0, baseline_surface)
+            logger.info(f"[{analysis_id}] Baseline surface generated with {len(baseline_vertices)} vertices")
+        
         processing_params = params.get('params', {})
         
         logger.info(f"[{analysis_id}] Starting surface processing with {len(surfaces_to_process)} surfaces")
@@ -124,14 +165,20 @@ class AnalysisExecutor:
             logger.error(f"[{analysis_id}] Results still not JSON serializable after conversion")
             raise RuntimeError("Failed to serialize analysis results")
 
-        logger.info(f"[{analysis_id}] Updating job status to completed")
+        # Determine if the analysis is considered complete
+        is_volume_analysis = len(surfaces_to_process) > 1 or params.get('generate_base_surface')
+        results_are_ready = not is_volume_analysis or ('volume_results' in serializable_results and serializable_results['volume_results'])
+
+        final_status = "completed" if results_are_ready else "processing"
+
+        logger.info(f"[{analysis_id}] Updating job status to {final_status}")
         
         # Store results for visualization - ensure no threading primitives
         self._results_cache[analysis_id] = {
             **serializable_results,
-            "analysis_metadata": {"status": "completed"}
+            "analysis_metadata": {"status": final_status}
         }
-        logger.info(f"[{analysis_id}] Results cached successfully. Analysis complete.")
+        logger.info(f"[{analysis_id}] Results cached successfully. Analysis status: {final_status}.")
 
     def start_analysis_execution(self, analysis_id: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Start analysis execution with background task management"""

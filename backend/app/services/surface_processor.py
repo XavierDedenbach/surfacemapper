@@ -203,32 +203,30 @@ class SurfaceProcessor:
             thickness_stats = thickness_calculator.calculate_thickness_statistics(thickness_data)
             
             # Calculate volume
-            volume_result = volume_calculator.calculate_volume_difference(
-                lower_surface['vertices'],
-                upper_surface['vertices']
+            volume_cubic_yards = volume_calculator.calculate_volume_between_surfaces(
+                lower_surface,
+                upper_surface
             )
 
             # Calculate compaction rate if tonnage is available
             compaction_rate = None
-            tonnage_used = tonnage_dict.get(i, None)
-            if tonnage_used and volume_result.volume_cubic_yards > 0:
-                compaction_rate = tonnage_used / volume_result.volume_cubic_yards
+            tonnage_used = tonnage_dict.get(i)
+            if tonnage_used and volume_cubic_yards > 0:
+                # Assuming tonnage is in US tons, material density in lbs/cubic yard
+                compaction_rate = (tonnage_used * 2000) / volume_cubic_yards
 
             # Store results in the expected format
             volume_results.append({
                 "layer_name": layer_name,
-                "volume_cubic_yards": volume_result.volume_cubic_yards,
-                "confidence_interval": None,
-                "uncertainty": None
+                "volume_cubic_yards": volume_cubic_yards,
             })
             
             thickness_results.append({
                 "layer_name": layer_name,
-                "average_thickness_feet": thickness_stats.get('mean', 0),
+                "average_thickness_feet": thickness_stats.get('average', 0),
                 "min_thickness_feet": thickness_stats.get('min', 0),
                 "max_thickness_feet": thickness_stats.get('max', 0),
                 "std_dev_thickness_feet": thickness_stats.get('std_dev', 0),
-                "confidence_interval": None
             })
             
             compaction_results.append({
@@ -239,8 +237,8 @@ class SurfaceProcessor:
 
             analysis_layers.append({
                 "layer_name": layer_name,
-                "volume_cubic_yards": volume_result.volume_cubic_yards,
-                "avg_thickness_feet": thickness_stats.get('mean'),
+                "volume_cubic_yards": volume_cubic_yards,
+                "avg_thickness_feet": thickness_stats.get('average'),
                 "min_thickness_feet": thickness_stats.get('min'),
                 "max_thickness_feet": thickness_stats.get('max'),
                 "std_dev_thickness_feet": thickness_stats.get('std_dev')

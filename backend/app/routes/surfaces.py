@@ -12,7 +12,7 @@ from app.utils.ply_parser import PLYParser
 from app.services.surface_cache import surface_cache
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/surfaces", tags=["surfaces"])
+router = APIRouter(tags=["surfaces"])
 
 UPLOAD_DIR = "/tmp/surfacemapper_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Query, Body, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Request, Query, Body, BackgroundTasks, status
 from fastapi.responses import JSONResponse
 from typing import Optional
 from app.services.analysis_executor import AnalysisExecutor
@@ -89,63 +89,50 @@ async def get_analysis_status(analysis_id: str):
 @router.get("/{analysis_id}/results")
 async def get_analysis_results(analysis_id: str, include: Optional[str] = Query(None, description="Filter results to include only specific components: volume, thickness, compaction")):
     try:
-        # Get results from executor
-        results = executor.get_results(analysis_id, include)
-        
-        # If no results and analysis doesn't exist
-        if results is None:
-            # Check if analysis exists
-            try:
-                status = executor.get_analysis_status(analysis_id)
-                # Analysis exists but not completed
-                if status["status"] == "processing":
-                    return JSONResponse(
-                        status_code=202,
-                        content={
-                            "status": "processing",
-                            "progress": status["progress_percent"] / 100.0,
-                            "estimated_completion": "2024-12-20T11:00:00Z"  # Mock estimation
-                        }
-                    )
-                elif status["status"] == "failed":
-                    return JSONResponse(
-                        status_code=200,
-                        content={
-                            "analysis_metadata": {
-                                "analysis_id": analysis_id,
-                                "status": "failed",
-                                "failure_time": status.get("completion_time"),
-                                "error_message": status.get("error_message", "Processing failed"),
-                                "partial_results_available": False
-                            }
-                        }
-                    )
-                elif status["status"] == "cancelled":
-                    return JSONResponse(
-                        status_code=200,
-                        content={
-                            "analysis_metadata": {
-                                "analysis_id": analysis_id,
-                                "status": "cancelled",
-                                "cancellation_time": status.get("completion_time"),
-                                "partial_results_available": False
-                            }
-                        }
-                    )
-            except KeyError:
-                # Analysis doesn't exist
-                raise HTTPException(status_code=404, detail="Analysis not found")
-        
-        if results is None:
-            raise HTTPException(status_code=500, detail="Analysis is marked as complete, but no results were found.")
+        # First, check the status of the analysis
+        status_info = executor.get_analysis_status(analysis_id)
+        current_status = status_info.get("status")
 
-        # Return results
-        return results
+        if current_status in ("pending", "running", "processing"):
+            return JSONResponse(
+                status_code=status.HTTP_202_ACCEPTED,
+                content={"status": current_status, "progress": status_info.get("progress_percent", 0)}
+            )
         
-    except HTTPException:
-        raise
+        if current_status == "failed":
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "analysis_metadata": {
+                        "analysis_id": analysis_id,
+                        "status": "failed",
+                        "error_message": status_info.get("error_message", "Processing failed without a specific error."),
+                    }
+                }
+            )
+
+        # If completed, get the results
+        if current_status == "completed":
+            results = executor.get_results(analysis_id, include)
+            if results:
+                return results
+            else:
+                # This case might happen in a race condition.
+                # The job is complete, but results are not yet in the cache.
+                # Return a 202 to encourage the client to poll again.
+                return JSONResponse(
+                    status_code=status.HTTP_202_ACCEPTED,
+                    content={"status": "completed_caching", "message": "Results are being cached."}
+                )
+        
+        # Handle other statuses or unexpected scenarios
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Analysis in unexpected state: {current_status}")
+
+    except KeyError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Analysis not found")
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error: " + str(e))
+        logger.error(f"Failed to get analysis results for {analysis_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 @router.post("/{analysis_id}/cancel")
 async def cancel_analysis(analysis_id: str):

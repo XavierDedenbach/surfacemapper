@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 import InputForms from './components/InputForms';
 import ThreeDViewer from './components/ThreeDViewer';
@@ -10,6 +10,7 @@ function App() {
   const [error, setError] = useState(null);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [tonnageParams, setTonnageParams] = useState([]);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   // State for the InputForms component
   const [surfaces, setSurfaces] = useState([]);
@@ -28,6 +29,17 @@ function App() {
       { lat: '', lon: '' },
     ],
   });
+
+  useEffect(() => {
+    let timer;
+    if (wizardStep === 1) {
+      setElapsedTime(0);
+      timer = setInterval(() => {
+        setElapsedTime(prevTime => prevTime + 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [wizardStep]);
 
   const handleWizardComplete = async () => {
     setWizardStep(1); // Show loading/processing view
@@ -83,20 +95,34 @@ function App() {
             throw new Error("Received an empty response from the server while checking status.");
           }
 
+          // The backend now sends status directly in the response body for 202
           const status = result.status || (result.analysis_metadata && result.analysis_metadata.status);
 
           if (status === 'completed') {
-            setAnalysisResult(result);
-            setWizardStep(2);
+            const isVolumeAnalysis = surfaces.length > 1 || generateBaseline;
+            const resultsAreReady = !isVolumeAnalysis || (result.volume_results && result.volume_results.length > 0);
+
+            if (resultsAreReady) {
+              setAnalysisResult(result);
+              setWizardStep(2);
+            } else {
+              // It's marked 'completed' but key results are missing. Poll again.
+              setTimeout(pollForResults, 3000);
+            }
           } else if (status === 'failed') {
-            const errorMsg = (result.analysis_metadata && result.analysis_metadata.error_message) || 'Analysis failed on the server.';
+            const errorMsg = result.error_message || (result.analysis_metadata && result.analysis_metadata.error_message) || 'Analysis failed on the server.';
             throw new Error(errorMsg);
-          } else { // Catches 'processing' and other states, and continues polling.
+          } else { // Catches 'processing', 'pending', 'running', 'completed_caching'
             setTimeout(pollForResults, 3000);
           }
         } catch (err) {
-          setError(err);
-          setWizardStep(2);
+          // Check if the error is from a 202 response, which indicates polling should continue
+          if (err.response && err.response.status === 202) {
+              setTimeout(pollForResults, 3000);
+          } else {
+              setError(err);
+              setWizardStep(2);
+          }
         }
       };
 
@@ -125,10 +151,17 @@ function App() {
   const renderContent = () => {
     switch (wizardStep) {
       case 1:
+        const formatTime = (seconds) => {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
         return (
           <div className="flex flex-col items-center justify-center h-screen">
             <h2 className="text-2xl font-bold mb-4">Processing...</h2>
             <p>Your analysis is being run.</p>
+            <p className="text-lg font-mono my-2">{formatTime(elapsedTime)}</p>
+            <p className="text-sm text-gray-500">Please note: This process can take up to 30 minutes for large surface files.</p>
           </div>
         );
       case 2:
