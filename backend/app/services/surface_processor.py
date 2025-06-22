@@ -272,6 +272,10 @@ class SurfaceProcessor:
             })
         logger.info("---------------------------------")
 
+        # Extract georeference parameters from the first surface if available
+        georef_params = params.get('georeference_params', [{}])
+        first_georef = georef_params[0] if georef_params else {}
+
         # Convert numpy arrays to lists for JSON serialization
         for surface in processed_surfaces:
             if isinstance(surface.get('vertices'), np.ndarray):
@@ -289,10 +293,10 @@ class SurfaceProcessor:
             "surface_tins": [{s.get('name'): s.get('faces')} for s in processed_surfaces],
             "surface_names": [surface.get('name', f'Surface {i}') for i, surface in enumerate(processed_surfaces)],
             "georef": {
-                "lat": 0.0,  # Default values - should be extracted from georeference_params
-                "lon": 0.0,
-                "orientation": 0.0,
-                "scale": 1.0
+                "lat": first_georef.get('anchor_lat', 0.0),
+                "lon": first_georef.get('anchor_lon', 0.0),
+                "orientation": first_georef.get('rotation_degrees', 0.0),
+                "scale": first_georef.get('scale_factor', 1.0)
             }
         }
         

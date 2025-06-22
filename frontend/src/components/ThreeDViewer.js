@@ -34,7 +34,7 @@ const ThreeDViewer = ({
   const mouseRef = useRef(new THREE.Vector2());
 
   const [isInitialized, setIsInitialized] = useState(false);
-  const [visibleSurfaces, setVisibleSurfaces] = useState(new Set());
+  const [visibleSurfaces, setVisibleSurfaces] = useState(new Set(data.surfaces.map((_, i) => i)));
 
   // Handle point selection with validation
   const handlePointSelect = useCallback((point) => {
@@ -159,12 +159,13 @@ const ThreeDViewer = ({
 
     const scene = sceneRef.current;
     
+    // Create a group for the surface meshes
+    const surfaceGroup = new THREE.Group();
+
     // Clear existing surface meshes
     scene.children = scene.children.filter(child => 
-      child.type === 'AmbientLight' || 
-      child.type === 'DirectionalLight' || 
-      child.type === 'GridHelper' || 
-      child.type === 'AxesHelper'
+      !(child instanceof THREE.Group) && // Keep everything that is not our surface group
+      child.type !== 'Mesh'
     );
 
     // Surface colors
@@ -208,26 +209,32 @@ const ThreeDViewer = ({
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.userData = { surfaceIndex: index, surfaceData: surface };
-
-      scene.add(mesh);
+      mesh.visible = visibleSurfaces.has(index);
+      surfaceGroup.add(mesh);
     });
 
-    // Update camera position to fit all surfaces
-    const box = new THREE.Box3().setFromObject(scene);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = 75;
-    const cameraZ = Math.abs(maxDim / 2 / Math.tan((fov * Math.PI) / 360));
+    scene.add(surfaceGroup);
 
-    const camera = cameraRef.current;
-    if (camera) {
-      camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
-      camera.lookAt(center);
-      controlsRef.current.target.copy(center);
-      controlsRef.current.update();
+    // Update camera position to fit all surfaces in the group
+    if (surfaceGroup.children.length > 0) {
+      const box = new THREE.Box3().setFromObject(surfaceGroup);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov = 75;
+      const cameraZ = Math.abs(maxDim / 2 / Math.tan((fov * Math.PI) / 360));
+
+      const camera = cameraRef.current;
+      if (camera) {
+        camera.position.set(center.x, center.y + size.y * 0.2, center.z + cameraZ * 1.5);
+        camera.lookAt(center);
+        if (controlsRef.current) {
+          controlsRef.current.target.copy(center);
+          controlsRef.current.update();
+        }
+      }
     }
-  }, [surfaces, isInitialized]);
+  }, [surfaces, isInitialized, visibleSurfaces]);
 
   // Handle mouse interaction for point analysis
   useEffect(() => {
@@ -263,36 +270,22 @@ const ThreeDViewer = ({
   }, [isInitialized, handlePointSelect]);
 
   return (
-    <div className="three-d-viewer">
-      <div 
-        ref={mountRef} 
-        style={{ 
-          width: '100%', 
-          height: '100%',
-          minHeight: '400px'
-        }} 
-      />
-      <div className="viewer-controls">
-        <button onClick={() => {
-          if (controlsRef.current) {
-            controlsRef.current.reset();
-          }
-        }}>
-          Reset View
-        </button>
-        <div className="surface-legend">
-          {surfaces?.map((surface, index) => (
-            <div key={index} className="legend-item">
-              <div 
-                className="legend-color" 
-                style={{ 
-                  backgroundColor: `#${Math.floor(surface.color || 0x4285f4).toString(16).padStart(6, '0')}` 
-                }}
-              />
-              <span>Surface {index + 1}</span>
-            </div>
-          ))}
-        </div>
+    <div className="h-full w-full relative">
+      <div ref={mountRef} className="h-full w-full" />
+      <div className="absolute top-2 left-2 bg-gray-800 bg-opacity-75 p-2 rounded">
+        <h4 className="text-white text-sm font-bold mb-2">Surfaces</h4>
+        {data.surfaces.map((surface, index) => (
+          <div key={index} className="flex items-center text-white">
+            <input
+              type="checkbox"
+              id={`surface-${index}`}
+              checked={visibleSurfaces.has(index)}
+              onChange={() => handleSurfaceToggle(index)}
+              className="mr-2"
+            />
+            <label htmlFor={`surface-${index}`}>{surface.name || `Surface ${index + 1}`}</label>
+          </div>
+        ))}
       </div>
     </div>
   );
