@@ -3,6 +3,7 @@ In-memory cache for storing surface geometry data.
 """
 from typing import Dict, Any, Optional
 import threading
+from app.utils.serialization import make_json_serializable
 
 class SurfaceCache:
     """
@@ -16,7 +17,9 @@ class SurfaceCache:
     def set(self, key: str, value: Dict[str, Any]):
         """Adds a value to the cache."""
         with self._lock:
-            self._cache[key] = value
+            # Ensure the value is JSON serializable before storing
+            serializable_value = make_json_serializable(value)
+            self._cache[key] = serializable_value
 
     def get(self, key: str) -> Optional[Dict[str, Any]]:
         """Retrieves a value from the cache."""
@@ -34,5 +37,20 @@ class SurfaceCache:
         with self._lock:
             self._cache.clear()
 
-# Create a singleton instance of the cache
+    def keys(self):
+        """Returns all cache keys."""
+        with self._lock:
+            return list(self._cache.keys())
+
+    def size(self) -> int:
+        """Returns the number of items in the cache."""
+        with self._lock:
+            return len(self._cache)
+
+    def contains(self, key: str) -> bool:
+        """Checks if a key exists in the cache."""
+        with self._lock:
+            return key in self._cache
+
+# Global instance
 surface_cache = SurfaceCache() 

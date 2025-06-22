@@ -7,6 +7,7 @@ from ..utils.ply_parser import PLYParser
 import pyvista as pv
 from . import triangulation, thickness_calculator
 from .volume_calculator import VolumeCalculator
+from ..utils.serialization import make_json_serializable
 
 class SurfaceProcessor:
     """
@@ -245,8 +246,15 @@ class SurfaceProcessor:
                 "std_dev_thickness_feet": thickness_stats.get('std_dev')
             })
 
-        # Final result structure for the frontend
-        return {
+        # Convert numpy arrays to lists for JSON serialization
+        for surface in processed_surfaces:
+            if isinstance(surface.get('vertices'), np.ndarray):
+                surface['vertices'] = surface['vertices'].tolist()
+            if isinstance(surface.get('faces'), np.ndarray):
+                surface['faces'] = surface['faces'].tolist()
+        
+        # Create the result structure and ensure it's fully serializable
+        result = {
             "surfaces": processed_surfaces,
             "analysis_summary": analysis_layers,
             "volume_results": volume_results,
@@ -260,4 +268,7 @@ class SurfaceProcessor:
                 "orientation": 0.0,
                 "scale": 1.0
             }
-        } 
+        }
+        
+        # Apply comprehensive serialization to ensure everything is JSON serializable
+        return make_json_serializable(result) 

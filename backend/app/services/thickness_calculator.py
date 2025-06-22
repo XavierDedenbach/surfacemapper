@@ -144,7 +144,9 @@ def _calculate_barycentric_coordinates(point_2d: np.ndarray, triangle_vertices: 
 def calculate_thickness_between_surfaces(
     upper_surface_points: np.ndarray,
     lower_surface_points: np.ndarray,
-    sample_points: Optional[np.ndarray] = None
+    sample_points: Optional[np.ndarray] = None,
+    sample_spacing: float = 1.0,
+    method: str = 'uniform'
 ) -> np.ndarray:
     """
     Calculate thickness between two surfaces at sample points.
@@ -153,6 +155,8 @@ def calculate_thickness_between_surfaces(
         upper_surface_points: Points defining upper surface [N, 3]
         lower_surface_points: Points defining lower surface [M, 3]
         sample_points: Points where thickness is calculated [K, 2] (optional)
+        sample_spacing: Spacing for uniform sampling
+        method: Sampling method ('uniform', 'adaptive', 'boundary')
         
     Returns:
         Thickness values at sample points [K]
@@ -162,14 +166,25 @@ def calculate_thickness_between_surfaces(
         from .triangulation import create_delaunay_triangulation
         
         upper_tin = create_delaunay_triangulation(upper_surface_points[:, :2])
-        upper_tin.z_values = upper_surface_points[:, 2]
+        setattr(upper_tin, 'z_values', upper_surface_points[:, 2])
         
         lower_tin = create_delaunay_triangulation(lower_surface_points[:, :2])
-        lower_tin.z_values = lower_surface_points[:, 2]
+        setattr(lower_tin, 'z_values', lower_surface_points[:, 2])
         
         # Generate sample points if not provided
         if sample_points is None:
-            sample_points = _generate_uniform_sample_points(upper_surface_points, lower_surface_points)
+            # Combine boundaries of both surfaces
+            combined_boundary = np.vstack([upper_surface_points[:, :2], lower_surface_points[:, :2]])
+            
+            # Select sampling method
+            if method == 'uniform':
+                sample_points = generate_uniform_sample_points(combined_boundary, sample_spacing)
+            elif method == 'adaptive':
+                sample_points = generate_adaptive_sample_points(combined_boundary, combined_boundary, sample_spacing)
+            elif method == 'boundary':
+                sample_points = generate_boundary_aware_sample_points(combined_boundary, sample_spacing)
+            else:
+                raise ValueError(f"Unknown sampling method: {method}")
         
         # Calculate thickness at each sample point
         thicknesses = np.zeros(len(sample_points))

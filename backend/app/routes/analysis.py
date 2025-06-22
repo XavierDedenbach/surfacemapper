@@ -12,11 +12,14 @@ from app.services.data_export import DataExporter
 import tempfile
 import os
 from datetime import datetime
+import logging
+import traceback
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 executor = AnalysisExecutor()
 stat_analyzer = StatisticalAnalyzer()
 data_exporter = DataExporter()
+logger = logging.getLogger(__name__)
 
 @router.post("/start", status_code=status.HTTP_202_ACCEPTED)
 async def start_analysis(request: ProcessingRequest):
@@ -52,11 +55,27 @@ async def execute_analysis(analysis_id: str, request: Request):
 @router.get("/{analysis_id}/status")
 async def get_analysis_status(analysis_id: str):
     try:
+        logger.info(f"Getting status for analysis {analysis_id}")
         status = executor.get_analysis_status(analysis_id)
+        logger.info(f"Status retrieved successfully: {status}")
+        
+        # Test serialization before returning
+        import json
+        try:
+            json.dumps(status)
+            logger.info("Status object is JSON serializable")
+        except Exception as e:
+            logger.error(f"Status object is NOT JSON serializable: {e}")
+            logger.error(f"Status object type: {type(status)}")
+            logger.error(f"Status object content: {repr(status)}")
+            raise HTTPException(status_code=500, detail=f"Serialization error: {str(e)}")
+        
         return status
     except KeyError:
         raise HTTPException(status_code=404, detail="Analysis not found")
     except Exception as e:
+        logger.error(f"Error in get_analysis_status: {e}")
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error: " + str(e))
 
 @router.get("/{analysis_id}/results")

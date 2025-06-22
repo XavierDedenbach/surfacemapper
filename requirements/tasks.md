@@ -2245,6 +2245,1059 @@ def test_large_dataset_alignment_performance():
 **How to Test**: Use tests from 8.2.1 - all performance tests must pass
 **Acceptance Criteria**: Parallel alignment provides 2-4x speedup on multi-core systems
 
+#### Subtask 8.2.3: FastAPI Background Task Migration (Threading to Background Tasks)
+
+##### Minor Task 8.2.3.1 (Test First): Write Tests for FastAPI Background Task Migration
+**Task**: Create comprehensive tests for FastAPI background task functionality
+**What to do**: Create `backend/tests/test_background_tasks.py` with tests for background task execution, status tracking, and error handling
+**Implementation Level**:
+- Test background task creation and execution
+- Test task status tracking and progress updates
+- Test error handling and task cancellation
+- Test concurrent task management
+- Test task cleanup and resource management
+**Code Estimate**: ~150 lines of test code
+**How to Test**:
+```python
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import Mock, patch
+import time
+import json
+
+def test_background_task_creation():
+    """Test that background tasks are properly created and queued"""
+    with TestClient(app) as client:
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1", "test-2"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        assert response.status_code == 202
+        data = response.json()
+        assert "analysis_id" in data
+        assert data["status"] == "started"
+        
+        # Verify task is queued
+        analysis_id = data["analysis_id"]
+        status_response = client.get(f"/analysis/{analysis_id}/status")
+        assert status_response.status_code == 200
+        status_data = status_response.json()
+        assert status_data["status"] in ["pending", "running"]
+
+def test_background_task_execution():
+    """Test that background tasks execute and complete successfully"""
+    with TestClient(app) as client:
+        # Start analysis
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1", "test-2"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Poll for completion
+        max_wait = 30  # seconds
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            if status_data["status"] == "completed":
+                break
+            time.sleep(1)
+        
+        assert status_data["status"] == "completed"
+        assert status_data["progress_percent"] == 100.0
+
+def test_background_task_error_handling():
+    """Test that background task errors are properly handled and reported"""
+    with TestClient(app) as client:
+        # Start analysis with invalid parameters
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["invalid-surface"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Wait for failure
+        max_wait = 10  # seconds
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            if status_data["status"] == "failed":
+                break
+            time.sleep(0.5)
+        
+        assert status_data["status"] == "failed"
+        assert "error_message" in status_data
+
+def test_concurrent_background_tasks():
+    """Test that multiple background tasks can run concurrently"""
+    with TestClient(app) as client:
+        # Start multiple analyses
+        analysis_ids = []
+        for i in range(3):
+            response = client.post("/analysis/start", json={
+                "surface_ids": [f"test-{i}"],
+                "params": {"boundary": [[0, 0], [100, 100]]}
+            })
+            analysis_ids.append(response.json()["analysis_id"])
+        
+        # Verify all are running
+        for analysis_id in analysis_ids:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            assert status_response.status_code == 200
+            status_data = status_response.json()
+            assert status_data["status"] in ["pending", "running"]
+
+def test_background_task_cancellation():
+    """Test that background tasks can be cancelled"""
+    with TestClient(app) as client:
+        # Start analysis
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1", "test-2"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Cancel the analysis
+        cancel_response = client.post(f"/analysis/{analysis_id}/cancel")
+        assert cancel_response.status_code == 200
+        
+        # Verify cancellation
+        status_response = client.get(f"/analysis/{analysis_id}/status")
+        status_data = status_response.json()
+        assert status_data["status"] == "cancelled"
+
+def test_background_task_cleanup():
+    """Test that background tasks are properly cleaned up after completion"""
+    with TestClient(app) as client:
+        # Start and complete analysis
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Wait for completion
+        max_wait = 30
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            if status_data["status"] in ["completed", "failed"]:
+                break
+            time.sleep(1)
+        
+        # Verify results are available
+        results_response = client.get(f"/analysis/{analysis_id}/results")
+        assert results_response.status_code == 200
+
+def test_no_threading_primitives_in_responses():
+    """Test that no threading primitives are returned in API responses"""
+    with TestClient(app) as client:
+        # Start analysis
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Check status response
+        status_response = client.get(f"/analysis/{analysis_id}/status")
+        assert status_response.status_code == 200
+        
+        # Verify response is JSON serializable and contains no threading primitives
+        status_data = status_response.json()
+        assert "thread_alive" not in status_data  # Should not contain thread objects
+        assert "thread" not in status_data
+        
+        # Verify no threading primitives in the response structure
+        def check_no_threading_primitives(obj, path=""):
+            import threading
+            import _thread
+            
+            if isinstance(obj, (threading.Thread, threading.Lock, threading.RLock, _thread.lock)):
+                pytest.fail(f"Threading primitive found at {path}: {type(obj)}")
+            elif isinstance(obj, dict):
+                for k, v in obj.items():
+                    check_no_threading_primitives(v, f"{path}.{k}")
+            elif isinstance(obj, (list, tuple)):
+                for i, v in enumerate(obj):
+                    check_no_threading_primitives(v, f"{path}[{i}]")
+        
+        check_no_threading_primitives(status_data)
+
+def test_background_task_memory_management():
+    """Test that background tasks don't leak memory or resources"""
+    with TestClient(app) as client:
+        # Start multiple analyses to test resource management
+        analysis_ids = []
+        for i in range(5):
+            response = client.post("/analysis/start", json={
+                "surface_ids": [f"test-{i}"],
+                "params": {"boundary": [[0, 0], [100, 100]]}
+            })
+            analysis_ids.append(response.json()["analysis_id"])
+        
+        # Wait for all to complete
+        max_wait = 60
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            all_completed = True
+            for analysis_id in analysis_ids:
+                status_response = client.get(f"/analysis/{analysis_id}/status")
+                status_data = status_response.json()
+                if status_data["status"] not in ["completed", "failed", "cancelled"]:
+                    all_completed = False
+                    break
+            if all_completed:
+                break
+            time.sleep(1)
+        
+        # Verify all completed
+        for analysis_id in analysis_ids:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            assert status_data["status"] in ["completed", "failed", "cancelled"]
+```
+**Acceptance Criteria**: All background task tests pass, no threading primitives in responses, proper error handling and resource management
+
+##### Minor Task 8.2.3.2 (Implementation): Implement FastAPI Background Task Migration
+**Task**: Migrate from threading-based analysis execution to FastAPI background tasks
+**What to do**: Replace threading implementation with FastAPI BackgroundTasks while maintaining all functionality
+**Implementation Level**:
+- Remove threading imports and thread management code
+- Implement FastAPI BackgroundTasks integration
+- Maintain job status tracking and progress updates
+- Preserve cancellation and error handling functionality
+- Ensure no threading primitives in API responses
+**Code Estimate**: ~300 lines across multiple files
+**Files to Modify**:
+
+**1. backend/app/services/analysis_executor.py**
+```python
+# Remove threading imports
+# import threading
+# import _thread
+# import signal
+
+# Add FastAPI imports
+from fastapi import BackgroundTasks
+from typing import Dict, Any, Optional
+import time
+import uuid
+import logging
+from app.utils.serialization import make_json_serializable, validate_json_serializable
+
+class AnalysisExecutor:
+    def __init__(self):
+        self._jobs: Dict[str, Dict[str, Any]] = {}
+        self._results_cache: Dict[str, Dict[str, Any]] = {}
+        # Remove threading lock
+        # self._lock = threading.Lock()
+        self.MAX_CONCURRENT_JOBS = 10
+        self.surface_processor = SurfaceProcessor()
+
+    def run_analysis_sync(self, analysis_id: str, params: Optional[Dict[str, Any]] = None):
+        """Synchronous analysis execution for background tasks"""
+        logger.info(f"[{analysis_id}] Background task analysis started")
+        
+        try:
+            # Update job status to running
+            self._update_job_status(analysis_id, "running", 10.0, "loading_surfaces")
+            
+            # Execute analysis (same logic as current _run_analysis)
+            self._execute_analysis_logic(analysis_id, params)
+            
+            # Update job status to completed
+            self._update_job_status(analysis_id, "completed", 100.0, "finished")
+            logger.info(f"[{analysis_id}] Background task analysis completed successfully")
+            
+        except Exception as e:
+            logger.error(f"[{analysis_id}] Background task analysis failed: {e}", exc_info=True)
+            self._update_job_status(analysis_id, "failed", 0.0, "error", str(e))
+
+    def _update_job_status(self, analysis_id: str, status: str, progress: float, step: str, error_msg: str = None):
+        """Thread-safe job status update"""
+        if analysis_id in self._jobs:
+            self._jobs[analysis_id].update({
+                "status": status,
+                "progress_percent": progress,
+                "current_step": step
+            })
+            if status in ["completed", "failed", "cancelled"]:
+                self._jobs[analysis_id]["completion_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            if error_msg:
+                self._jobs[analysis_id]["error_message"] = error_msg
+
+    def _execute_analysis_logic(self, analysis_id: str, params: Optional[Dict[str, Any]] = None):
+        """Extract analysis logic from current _run_analysis method"""
+        # Copy the entire analysis logic from _run_analysis method
+        # but remove all threading-specific code and locks
+        # This includes surface loading, processing, and result caching
+        
+        surface_ids = params.get('surface_ids', [])
+        logger.info(f"[{analysis_id}] Loading {len(surface_ids)} surfaces from cache")
+        
+        # Load surface data from cache with progress updates
+        surfaces_to_process = []
+        parser = PLYParser()
+        
+        for i, sid in enumerate(surface_ids):
+            logger.info(f"[{analysis_id}] Loading surface {i+1}/{len(surface_ids)}: {sid}")
+            
+            cached_surface = surface_cache.get(sid)
+            if not cached_surface or 'file_path' not in cached_surface:
+                raise RuntimeError(f"Surface {sid} not found in cache or is invalid.")
+            
+            file_path = cached_surface['file_path']
+            logger.info(f"[{analysis_id}] Parsing PLY file: {file_path}")
+            
+            vertices, faces = parser.parse_ply_file(file_path)
+            logger.info(f"[{analysis_id}] Loaded {len(vertices)} vertices, {len(faces) if faces is not None else 0} faces")
+            
+            surfaces_to_process.append({
+                "id": sid,
+                "name": cached_surface.get("filename", "Unknown"),
+                "vertices": vertices,
+                "faces": faces
+            })
+            
+            # Update progress
+            progress = 20.0 + (i / len(surface_ids)) * 30.0
+            self._update_job_status(analysis_id, "running", progress, f"loaded_surface_{i+1}")
+        
+        processing_params = params.get('params', {})
+        
+        logger.info(f"[{analysis_id}] Starting surface processing with {len(surfaces_to_process)} surfaces")
+        self._update_job_status(analysis_id, "running", 50.0, "processing_surfaces")
+        
+        analysis_results = self.surface_processor.process_surfaces(surfaces_to_process, processing_params)
+        logger.info(f"[{analysis_id}] Surface processing completed successfully")
+        
+        # Ensure results are fully JSON serializable before caching
+        logger.info(f"[{analysis_id}] Serializing results for caching")
+        self._update_job_status(analysis_id, "running", 90.0, "serializing_results")
+        
+        # The surface processor already applies make_json_serializable, but let's double-check
+        serializable_results = make_json_serializable(analysis_results)
+        logger.info(f"[{analysis_id}] Results serialized successfully")
+
+        # Validate that results are actually JSON serializable
+        if not validate_json_serializable(serializable_results):
+            logger.error(f"[{analysis_id}] Results still not JSON serializable after conversion")
+            raise RuntimeError("Failed to serialize analysis results")
+
+        logger.info(f"[{analysis_id}] Updating job status to completed")
+        
+        # Store results for visualization - ensure no threading primitives
+        self._results_cache[analysis_id] = {
+            **serializable_results,
+            "analysis_metadata": {"status": "completed"}
+        }
+        logger.info(f"[{analysis_id}] Results cached successfully. Analysis complete.")
+
+    def start_analysis_execution(self, analysis_id: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Start analysis execution with background task management"""
+        if analysis_id in self._jobs:
+            job = self._jobs[analysis_id]
+            if job["status"] in ("running", "pending"):
+                raise RuntimeError("Analysis already running")
+        
+        # Handle new frontend payload structure
+        surface_count = len(params.get('surface_ids', [])) if params else 0
+        
+        # Ensure params are JSON serializable before storing
+        serializable_params = make_json_serializable(params) if params else {}
+        
+        job = {
+            "status": "pending",
+            "progress_percent": 0.0,
+            "current_step": "queued",
+            "cancellable": True,
+            "start_time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "params": serializable_params
+        }
+        
+        if len(self._jobs) >= self.MAX_CONCURRENT_JOBS:
+            # Simple queueing mechanism
+            oldest_job_id = min(self._jobs.keys(), key=lambda k: self._jobs[k]["start_time"])
+            if self._jobs[oldest_job_id]["status"] not in ("completed", "failed", "cancelled"):
+                 raise HTTPException(status_code=503, detail="Max concurrent jobs reached, please try again later.")
+            else:
+                del self._jobs[oldest_job_id]
+
+        self._jobs[analysis_id] = job
+        logger.info(f"[{analysis_id}] Job created with status: {job['status']}")
+        
+        return {
+            "status": "started",
+            "analysis_id": analysis_id,
+            "message": f"Analysis started with {surface_count} surfaces"
+        }
+
+    def get_analysis_status(self, analysis_id: str) -> Dict[str, Any]:
+        """Get analysis status without threading primitives"""
+        if analysis_id not in self._jobs:
+            raise KeyError("Analysis not found")
+        
+        job = self._jobs[analysis_id]
+        
+        status = {
+            "analysis_id": analysis_id,
+            "status": job["status"],
+            "progress_percent": job["progress_percent"],
+            "current_step": job["current_step"],
+            "start_time": job.get("start_time"),
+            "completion_time": job.get("completion_time"),
+            "error_message": job.get("error_message")
+        }
+        
+        logger.info(f"Returning status for {analysis_id}: {status}")
+        
+        # Ensure the status response is JSON serializable
+        return make_json_serializable(status)
+
+    def cancel_analysis(self, analysis_id: str) -> Dict[str, Any]:
+        job = self._jobs.get(analysis_id)
+        if not job:
+            raise KeyError("Analysis not found")
+        if job["status"] == "completed":
+            raise RuntimeError("Analysis already completed")
+        if job["status"] == "cancelled":
+            raise RuntimeError("Analysis already cancelled")
+        job["cancelled"] = True
+        job["status"] = "cancelled"
+        job["cancellation_time"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        return {"status": "cancelled", "analysis_id": analysis_id}
+
+    # Keep all static methods unchanged
+    @staticmethod
+    def is_valid_status(status: str) -> bool:
+        return status in ("pending", "running", "completed", "failed", "cancelled")
+
+    @staticmethod
+    def is_valid_priority(priority: str) -> bool:
+        return priority in ("low", "normal", "high", "urgent")
+
+    @staticmethod
+    def validate_execution_parameters(params: Dict[str, Any]) -> bool:
+        if not isinstance(params, dict):
+            return False
+        if "priority" in params and not AnalysisExecutor.is_valid_priority(params["priority"]):
+            return False
+        if "notify_on_completion" in params and not isinstance(params["notify_on_completion"], bool):
+            return False
+        if "save_intermediate_results" in params and not isinstance(params["save_intermediate_results"], bool):
+            return False
+        return True
+
+    @staticmethod
+    def generate_analysis_id() -> str:
+        return str(uuid.uuid4())
+
+    @staticmethod
+    def calculate_progress(current: int, total: int) -> float:
+        if total <= 0:
+            return 0.0
+        return min(100.0, max(0.0, float(current) / total * 100))
+
+    @staticmethod
+    def calculate_estimated_duration(surface_count: int) -> float:
+        return max(1.0, float(surface_count) * 1.0)
+
+    @staticmethod
+    def can_cancel(status: str) -> bool:
+        return status in ("pending", "running")
+
+    @staticmethod
+    def format_error_message(msg: str, step: str) -> str:
+        return f"Error during {step}: {msg}"
+
+    @staticmethod
+    def classify_error(msg: str) -> str:
+        if "not found" in msg.lower():
+            return "input_error"
+        if "memory" in msg.lower():
+            return "resource_error"
+        return "processing_error"
+```
+
+**2. backend/app/routes/analysis.py**
+```python
+from fastapi import APIRouter, HTTPException, Request, Query, Body, BackgroundTasks
+from fastapi.responses import JSONResponse
+from typing import Optional
+from app.services.analysis_executor import AnalysisExecutor
+# ... other imports remain the same
+
+@router.post("/start", status_code=status.HTTP_202_ACCEPTED)
+async def start_analysis(request: ProcessingRequest, background_tasks: BackgroundTasks):
+    """
+    Starts a new analysis job using FastAPI background tasks.
+    """
+    try:
+        analysis_id = executor.generate_analysis_id()
+        # The request body is now a Pydantic model, so we convert it to a dict
+        params = request.dict()
+        
+        # Start the analysis using background tasks
+        background_tasks.add_task(executor.run_analysis_sync, analysis_id, params)
+        
+        result = executor.start_analysis_execution(analysis_id, params)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to start analysis: " + str(e))
+
+@router.post("/{analysis_id}/execute")
+async def execute_analysis(analysis_id: str, request: Request, background_tasks: BackgroundTasks):
+    try:
+        params = await request.json() if request.headers.get("content-type", "").startswith("application/json") else None
+        if params and not executor.validate_execution_parameters(params):
+            raise HTTPException(status_code=400, detail="Invalid execution parameters")
+        
+        # Start the analysis using background tasks
+        background_tasks.add_task(executor.run_analysis_sync, analysis_id, params)
+        
+        result = executor.start_analysis_execution(analysis_id, params)
+        return JSONResponse(status_code=202, content=result)
+    except RuntimeError as e:
+        if "already running" in str(e):
+            raise HTTPException(status_code=409, detail="Analysis already running")
+        raise HTTPException(status_code=500, detail="Internal server error: " + str(e))
+    except Exception as e:
+        if "not found" in str(e):
+            raise HTTPException(status_code=404, detail="Analysis not found")
+        raise HTTPException(status_code=500, detail="Internal server error: " + str(e))
+
+# All other endpoints remain the same
+```
+
+**3. backend/app/main.py**
+```python
+# Remove threading-related middleware and imports
+# Remove these imports:
+# import threading
+# import _thread
+
+# Remove the threading primitive checking middleware
+# Remove the check_threading_primitives function
+# Remove the serialization middleware that checks for threading primitives
+
+# Keep only the basic exception logging middleware
+@app.middleware("http")
+async def log_exceptions_middleware(request: Request, call_next):
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        logger.error(f"Exception in {request.method} {request.url.path}: {exc}")
+        logger.error(traceback.format_exc())
+        raise
+
+# Remove the custom serialization middleware that was checking for threading primitives
+```
+
+**4. backend/app/utils/serialization.py**
+```python
+# Remove threading-related imports and checks
+# import threading  # Remove this
+
+def make_json_serializable(data):
+    """Convert data to JSON serializable format, removing threading primitives"""
+    if data is None:
+        return None
+    elif isinstance(data, (str, int, float, bool)):
+        return data
+    elif isinstance(data, dict):
+        return {k: make_json_serializable(v) for k, v in data.items()}
+    elif isinstance(data, (list, tuple)):
+        return [make_json_serializable(item) for item in data]
+    elif isinstance(data, np.ndarray):
+        return data.tolist()
+    elif hasattr(data, 'tolist'):  # Handle other numpy-like objects
+        return data.tolist()
+    elif hasattr(data, '__dict__'):  # Handle custom objects
+        return make_json_serializable(data.__dict__)
+    else:
+        # Remove threading primitive handling
+        # if isinstance(data, (threading.Lock, threading.RLock, threading.Thread)):
+        #     logger.warning(f"Removing threading primitive {type(data)} from serialization")
+        #     return None
+        
+        # For any other non-serializable objects, convert to string
+        try:
+            return str(data)
+        except:
+            return None
+```
+
+**5. backend/app/services/surface_cache.py**
+```python
+# Remove threading lock
+# import threading  # Remove this
+
+# Remove the lock
+# _lock = threading.Lock()
+
+# Make the cache operations thread-safe using simpler methods
+# For now, we'll use a basic approach - in production you might want to use
+# a proper thread-safe cache or database
+
+_surface_cache = {}
+
+def get(surface_id: str):
+    """Get surface from cache"""
+    return _surface_cache.get(surface_id)
+
+def set(surface_id: str, surface_data: dict):
+    """Set surface in cache"""
+    _surface_cache[surface_id] = surface_data
+
+def delete(surface_id: str):
+    """Delete surface from cache"""
+    if surface_id in _surface_cache:
+        del _surface_cache[surface_id]
+
+def clear():
+    """Clear all cached surfaces"""
+    _surface_cache.clear()
+
+def list_surfaces():
+    """List all cached surface IDs"""
+    return list(_surface_cache.keys())
+```
+
+**How to Test**: Use tests from 8.2.3.1 - all background task tests must pass
+**Acceptance Criteria**: 
+- All threading primitives removed from codebase
+- Background tasks execute successfully
+- No serialization errors in API responses
+- All existing functionality preserved
+- Proper error handling and status tracking maintained
+
+##### Minor Task 8.2.3.3 (Fine-tooth Comb): Comprehensive Migration Validation
+**Task**: Perform comprehensive validation to ensure complete migration success
+**What to do**: Systematically verify every aspect of the migration and test all edge cases
+**Implementation Level**:
+- Verify no threading imports remain in codebase
+- Test all API endpoints for threading primitive serialization
+- Validate background task execution and cleanup
+- Test concurrent job handling and resource management
+- Verify error handling and edge cases
+- Performance testing and comparison
+**Code Estimate**: ~200 lines of validation code
+**Validation Steps**:
+
+**Step 1: Codebase Threading Audit**
+```bash
+# Search for any remaining threading imports or usage
+grep -r "import threading" backend/
+grep -r "import _thread" backend/
+grep -r "threading\." backend/
+grep -r "_thread\." backend/
+grep -r "Thread(" backend/
+grep -r "Lock(" backend/
+grep -r "RLock(" backend/
+grep -r "thread_alive" backend/
+grep -r "thread" backend/app/services/analysis_executor.py
+```
+
+**Step 2: API Response Serialization Testing**
+```python
+# Create comprehensive serialization test
+def test_all_api_endpoints_no_threading_primitives():
+    """Test that all API endpoints return JSON serializable responses without threading primitives"""
+    with TestClient(app) as client:
+        # Test all endpoints that might return job status or results
+        endpoints_to_test = [
+            ("POST", "/analysis/start", {"surface_ids": ["test-1"], "params": {"boundary": [[0, 0], [100, 100]]}}),
+            ("GET", "/analysis/{analysis_id}/status", None),
+            ("GET", "/analysis/{analysis_id}/results", None),
+            ("POST", "/analysis/{analysis_id}/cancel", None),
+            ("POST", "/analysis/{analysis_id}/point_query", {"x": 50, "y": 50}),
+            ("GET", "/surfaces/upload", None),
+            ("POST", "/surfaces/process", {"surface_files": []}),
+        ]
+        
+        for method, endpoint, data in endpoints_to_test:
+            if "{analysis_id}" in endpoint:
+                # Create a test analysis first
+                start_response = client.post("/analysis/start", json={
+                    "surface_ids": ["test-1"],
+                    "params": {"boundary": [[0, 0], [100, 100]]}
+                })
+                analysis_id = start_response.json()["analysis_id"]
+                endpoint = endpoint.replace("{analysis_id}", analysis_id)
+            
+            try:
+                if method == "GET":
+                    response = client.get(endpoint)
+                elif method == "POST":
+                    response = client.post(endpoint, json=data)
+                
+                # Verify response is JSON serializable
+                assert response.status_code in [200, 202, 404, 500]  # Acceptable status codes
+                
+                if response.status_code == 200:
+                    response_data = response.json()
+                    # Verify no threading primitives
+                    check_no_threading_primitives(response_data, f"endpoint: {endpoint}")
+                    
+            except Exception as e:
+                pytest.fail(f"Endpoint {endpoint} failed: {e}")
+
+def check_no_threading_primitives(obj, path=""):
+    """Recursively check for threading primitives in response data"""
+    import threading
+    import _thread
+    
+    if isinstance(obj, (threading.Thread, threading.Lock, threading.RLock, _thread.lock)):
+        pytest.fail(f"Threading primitive found at {path}: {type(obj)}")
+    elif isinstance(obj, dict):
+        for k, v in obj.items():
+            check_no_threading_primitives(v, f"{path}.{k}")
+    elif isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            check_no_threading_primitives(v, f"{path}[{i}]")
+```
+
+**Step 3: Background Task Execution Validation**
+```python
+def test_background_task_lifecycle():
+    """Test complete background task lifecycle"""
+    with TestClient(app) as client:
+        # Start analysis
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1", "test-2"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        assert response.status_code == 202
+        analysis_id = response.json()["analysis_id"]
+        
+        # Monitor task progression
+        status_history = []
+        max_wait = 60
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            status_history.append(status_data["status"])
+            
+            if status_data["status"] in ["completed", "failed", "cancelled"]:
+                break
+            time.sleep(1)
+        
+        # Verify proper status progression
+        assert "pending" in status_history or "running" in status_history
+        assert status_data["status"] in ["completed", "failed", "cancelled"]
+        
+        # Verify final status is appropriate
+        if status_data["status"] == "completed":
+            # Check results are available
+            results_response = client.get(f"/analysis/{analysis_id}/results")
+            assert results_response.status_code == 200
+            results_data = results_response.json()
+            assert "analysis_metadata" in results_data
+
+def test_concurrent_background_task_handling():
+    """Test handling of multiple concurrent background tasks"""
+    with TestClient(app) as client:
+        # Start multiple analyses simultaneously
+        analysis_ids = []
+        for i in range(5):
+            response = client.post("/analysis/start", json={
+                "surface_ids": [f"test-{i}"],
+                "params": {"boundary": [[0, 0], [100, 100]]}
+            })
+            assert response.status_code == 202
+            analysis_ids.append(response.json()["analysis_id"])
+        
+        # Verify all are properly queued/started
+        for analysis_id in analysis_ids:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            assert status_response.status_code == 200
+            status_data = status_response.json()
+            assert status_data["status"] in ["pending", "running"]
+        
+        # Wait for all to complete
+        max_wait = 120
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            all_completed = True
+            for analysis_id in analysis_ids:
+                status_response = client.get(f"/analysis/{analysis_id}/status")
+                status_data = status_response.json()
+                if status_data["status"] not in ["completed", "failed", "cancelled"]:
+                    all_completed = False
+                    break
+            if all_completed:
+                break
+            time.sleep(2)
+        
+        # Verify all completed
+        for analysis_id in analysis_ids:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            assert status_data["status"] in ["completed", "failed", "cancelled"]
+```
+
+**Step 4: Error Handling and Edge Case Testing**
+```python
+def test_background_task_error_scenarios():
+    """Test various error scenarios in background tasks"""
+    with TestClient(app) as client:
+        # Test invalid surface IDs
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["invalid-surface"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Wait for failure
+        max_wait = 30
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            if status_data["status"] == "failed":
+                break
+            time.sleep(1)
+        
+        assert status_data["status"] == "failed"
+        assert "error_message" in status_data
+        
+        # Test cancellation of running task
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Cancel immediately
+        cancel_response = client.post(f"/analysis/{analysis_id}/cancel")
+        assert cancel_response.status_code == 200
+        
+        # Verify cancellation
+        status_response = client.get(f"/analysis/{analysis_id}/status")
+        status_data = status_response.json()
+        assert status_data["status"] == "cancelled"
+
+def test_background_task_resource_cleanup():
+    """Test that background tasks properly clean up resources"""
+    with TestClient(app) as client:
+        # Start multiple analyses to test resource management
+        analysis_ids = []
+        for i in range(10):
+            response = client.post("/analysis/start", json={
+                "surface_ids": [f"test-{i}"],
+                "params": {"boundary": [[0, 0], [100, 100]]}
+            })
+            analysis_ids.append(response.json()["analysis_id"])
+        
+        # Wait for all to complete
+        max_wait = 180
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            all_completed = True
+            for analysis_id in analysis_ids:
+                status_response = client.get(f"/analysis/{analysis_id}/status")
+                status_data = status_response.json()
+                if status_data["status"] not in ["completed", "failed", "cancelled"]:
+                    all_completed = False
+                    break
+            if all_completed:
+                break
+            time.sleep(2)
+        
+        # Verify all completed and resources are cleaned up
+        for analysis_id in analysis_ids:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            assert status_data["status"] in ["completed", "failed", "cancelled"]
+            
+            # Verify results are accessible for completed tasks
+            if status_data["status"] == "completed":
+                results_response = client.get(f"/analysis/{analysis_id}/results")
+                assert results_response.status_code == 200
+```
+
+**Step 5: Performance Comparison Testing**
+```python
+def test_background_task_performance():
+    """Test performance characteristics of background tasks vs threading"""
+    with TestClient(app) as client:
+        # Test single analysis performance
+        start_time = time.time()
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1", "test-2"],
+            "params": {"boundary": [[0, 0], [100, 100]]}
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # Wait for completion
+        max_wait = 60
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            if status_data["status"] in ["completed", "failed"]:
+                break
+            time.sleep(1)
+        
+        completion_time = time.time() - start_time
+        
+        # Verify reasonable performance (should complete within 60 seconds)
+        assert completion_time < 60.0
+        assert status_data["status"] == "completed"
+        
+        # Test concurrent performance
+        concurrent_start = time.time()
+        analysis_ids = []
+        for i in range(3):
+            response = client.post("/analysis/start", json={
+                "surface_ids": [f"test-{i}"],
+                "params": {"boundary": [[0, 0], [100, 100]]}
+            })
+            analysis_ids.append(response.json()["analysis_id"])
+        
+        # Wait for all to complete
+        max_wait = 120
+        while time.time() - concurrent_start < max_wait:
+            all_completed = True
+            for analysis_id in analysis_ids:
+                status_response = client.get(f"/analysis/{analysis_id}/status")
+                status_data = status_response.json()
+                if status_data["status"] not in ["completed", "failed"]:
+                    all_completed = False
+                    break
+            if all_completed:
+                break
+            time.sleep(2)
+        
+        concurrent_completion_time = time.time() - concurrent_start
+        
+        # Verify concurrent performance (should complete within 120 seconds)
+        assert concurrent_completion_time < 120.0
+        
+        # Verify all completed successfully
+        for analysis_id in analysis_ids:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            assert status_data["status"] == "completed"
+```
+
+**Step 6: Integration Testing**
+```python
+def test_full_workflow_integration():
+    """Test complete workflow from upload to analysis to results"""
+    with TestClient(app) as client:
+        # 1. Upload surface files (mock)
+        # 2. Start analysis
+        response = client.post("/analysis/start", json={
+            "surface_ids": ["test-1", "test-2"],
+            "params": {
+                "boundary": [[0, 0], [100, 100]],
+                "tonnage_per_layer": [
+                    {"layer_index": 0, "tonnage": 100.0}
+                ]
+            }
+        })
+        analysis_id = response.json()["analysis_id"]
+        
+        # 3. Monitor progress
+        max_wait = 60
+        start_time = time.time()
+        while time.time() - start_time < max_wait:
+            status_response = client.get(f"/analysis/{analysis_id}/status")
+            status_data = status_response.json()
+            if status_data["status"] == "completed":
+                break
+            time.sleep(1)
+        
+        # 4. Get results
+        results_response = client.get(f"/analysis/{analysis_id}/results")
+        assert results_response.status_code == 200
+        results_data = results_response.json()
+        
+        # 5. Verify results structure
+        assert "analysis_metadata" in results_data
+        assert "volume_results" in results_data
+        assert "thickness_results" in results_data
+        assert "compaction_results" in results_data
+        
+        # 6. Test point query functionality
+        point_query_response = client.post(f"/analysis/{analysis_id}/point_query", json={
+            "x": 50.0,
+            "y": 50.0,
+            "coordinate_system": "utm"
+        })
+        assert point_query_response.status_code == 200
+        point_data = point_query_response.json()
+        assert "thickness_layers" in point_data
+        assert "query_point" in point_data
+```
+
+**Step 7: Final Validation Checklist**
+```python
+def test_migration_completion_checklist():
+    """Final checklist to ensure migration is complete"""
+    
+    # 1. Verify no threading imports remain
+    import subprocess
+    result = subprocess.run(['grep', '-r', 'import threading', 'backend/'], 
+                          capture_output=True, text=True)
+    assert result.stdout == "", "Threading imports still present"
+    
+    result = subprocess.run(['grep', '-r', 'import _thread', 'backend/'], 
+                          capture_output=True, text=True)
+    assert result.stdout == "", "_thread imports still present"
+    
+    # 2. Verify no threading primitives in code
+    result = subprocess.run(['grep', '-r', 'threading\\.', 'backend/'], 
+                          capture_output=True, text=True)
+    assert result.stdout == "", "Threading module usage still present"
+    
+    # 3. Verify FastAPI BackgroundTasks is used
+    result = subprocess.run(['grep', '-r', 'BackgroundTasks', 'backend/'], 
+                          capture_output=True, text=True)
+    assert "BackgroundTasks" in result.stdout, "BackgroundTasks not found"
+    
+    # 4. Verify background_tasks.add_task is used
+    result = subprocess.run(['grep', '-r', 'background_tasks\\.add_task', 'backend/'], 
+                          capture_output=True, text=True)
+    assert "background_tasks.add_task" in result.stdout, "add_task not found"
+    
+    # 5. Verify no thread_alive references
+    result = subprocess.run(['grep', '-r', 'thread_alive', 'backend/'], 
+                          capture_output=True, text=True)
+    assert result.stdout == "", "thread_alive references still present"
+    
+    print("✅ Migration validation checklist passed")
+```
+
+**How to Test**: Run all validation tests and verify checklist completion
+**Acceptance Criteria**: 
+- All validation tests pass
+- No threading primitives found in codebase
+- All API endpoints return JSON serializable responses
+- Background tasks execute successfully with proper error handling
+- Performance is maintained or improved
+- Complete workflow integration works correctly
+- Migration checklist passes all items
+
+**Migration Success Criteria:**
+1. ✅ No threading imports or usage in codebase
+2. ✅ All API endpoints return JSON serializable responses
+3. ✅ Background tasks execute and complete successfully
+4. ✅ Error handling and status tracking work correctly
+5. ✅ Concurrent job handling functions properly
+6. ✅ Resource cleanup and memory management work correctly
+7. ✅ Performance is maintained or improved
+8. ✅ All existing functionality preserved
+9. ✅ No serialization errors in production
+10. ✅ Complete workflow integration works end-to-end
+
 #### Subtask 8.3: Quality Assessment and Validation
 
 ##### Minor Task 8.3.1 (Test First): Write Alignment Quality Assessment Tests

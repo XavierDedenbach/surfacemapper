@@ -14,6 +14,9 @@ from app.services.surface_cache import surface_cache
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/surfaces", tags=["surfaces"])
 
+UPLOAD_DIR = "/tmp/surfacemapper_uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 @router.post("/upload", response_model=SurfaceUploadResponse)
 async def upload_surface(file: UploadFile = File(...)):
     """
@@ -21,15 +24,12 @@ async def upload_surface(file: UploadFile = File(...)):
     """
     logger.info(f"Uploading surface file: {file.filename}")
 
-    # Validate file extension
     if not validate_file_extension(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type: only .ply files are supported and must not be named '.ply' only.")
+        raise HTTPException(status_code=400, detail="Invalid file type: only .ply files are supported.")
 
-    # Save to temp file to check size and content
-    temp_dir = "/tmp/surfacemapper_uploads"
-    os.makedirs(temp_dir, exist_ok=True)
     file_id = str(uuid.uuid4())
-    temp_path = os.path.join(temp_dir, f"{file_id}_{file.filename}")
+    temp_path = os.path.join(UPLOAD_DIR, f"{file_id}.ply")
+    
     size_bytes = 0
     try:
         with open(temp_path, "wb") as out:
@@ -43,12 +43,10 @@ async def upload_surface(file: UploadFile = File(...)):
         logger.error(f"Failed to save uploaded file: {e}")
         raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
 
-    # Validate file size
     if not validate_file_size(size_bytes):
         os.remove(temp_path)
         raise HTTPException(status_code=400, detail="File is empty or exceeds 2GB size limit.")
 
-    # Validate PLY format
     try:
         with open(temp_path, "rb") as f:
             if not validate_ply_format(f):
@@ -59,38 +57,21 @@ async def upload_surface(file: UploadFile = File(...)):
         os.remove(temp_path)
         raise HTTPException(status_code=400, detail="Invalid or corrupted PLY file.")
 
-    # Parse the PLY file to get vertices and faces
-    try:
-        parser = PLYParser()
-        vertices, faces = parser.parse_ply_file(temp_path)
-        
-        vertices_list = vertices.tolist() if vertices is not None else []
-        faces_list = faces.tolist() if faces is not None else []
-        
-        # Generate a unique ID and cache the surface data
-        surface_id = str(uuid.uuid4())
-        surface_cache.set(surface_id, {
-            "vertices": vertices_list,
-            "faces": faces_list,
-            "filename": file.filename
-        })
-        
-    except Exception as e:
-        logger.error(f"Failed to parse PLY file: {e}")
-        os.remove(temp_path)
-        raise HTTPException(status_code=500, detail="Failed to parse PLY file content.")
-    finally:
-        # Clean up the temporary file
-        os.remove(temp_path)
+    # Generate a unique ID and cache the surface metadata and file path
+    surface_id = str(uuid.uuid4())
+    surface_cache.set(surface_id, {
+        "file_path": temp_path,
+        "filename": file.filename,
+        "size_bytes": size_bytes
+    })
 
-    # Success
     return SurfaceUploadResponse(
-        message="Surface uploaded successfully",
+        message="Surface uploaded successfully and is ready for analysis.",
         filename=file.filename,
         surface_id=surface_id,
         status=ProcessingStatus.PENDING,
-        vertices=vertices_list,
-        faces=faces_list
+        vertices=[],  # No longer sending vertices in response
+        faces=[]  # No longer sending faces in response
     )
 
 @router.post("/validate")
