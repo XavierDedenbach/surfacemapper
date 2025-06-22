@@ -13,14 +13,18 @@ services:
     environment:
       - PYTHONPATH=/app
       - ENVIRONMENT=development
+      - PYTHONUNBUFFERED=1
+      - OMP_NUM_THREADS=8
+      - MKL_NUM_THREADS=8
+      - OPENBLAS_NUM_THREADS=8
     deploy:
       resources:
         limits:
+          memory: 16G
+          cpus: '8.0'
+        reservations:
           memory: 4G
           cpus: '2.0'
-        reservations:
-          memory: 1G
-          cpus: '0.5'
     ulimits:
       nofile:
         soft: 65536

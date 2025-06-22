@@ -216,14 +216,14 @@ class SurfaceProcessor:
 
             # Store results in the expected format
             volume_results.append({
-                "layer_designation": layer_name,
+                "layer_name": layer_name,
                 "volume_cubic_yards": volume_result.volume_cubic_yards,
                 "confidence_interval": None,
                 "uncertainty": None
             })
             
             thickness_results.append({
-                "layer_designation": layer_name,
+                "layer_name": layer_name,
                 "average_thickness_feet": thickness_stats.get('mean', 0),
                 "min_thickness_feet": thickness_stats.get('min', 0),
                 "max_thickness_feet": thickness_stats.get('max', 0),
@@ -232,7 +232,7 @@ class SurfaceProcessor:
             })
             
             compaction_results.append({
-                "layer_designation": layer_name,
+                "layer_name": layer_name,
                 "compaction_rate_lbs_per_cubic_yard": compaction_rate,
                 "tonnage_used": tonnage_used
             })

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Request, Query, Body
+from fastapi import APIRouter, HTTPException, Request, Query, Body, BackgroundTasks
 from fastapi.responses import JSONResponse
 from typing import Optional
 from app.services.analysis_executor import AnalysisExecutor
@@ -15,32 +15,40 @@ from datetime import datetime
 import logging
 import traceback
 
-router = APIRouter(prefix="/analysis", tags=["analysis"])
+router = APIRouter(tags=["analysis"])
 executor = AnalysisExecutor()
 stat_analyzer = StatisticalAnalyzer()
 data_exporter = DataExporter()
 logger = logging.getLogger(__name__)
 
 @router.post("/start", status_code=status.HTTP_202_ACCEPTED)
-async def start_analysis(request: ProcessingRequest):
+async def start_analysis(request: ProcessingRequest, background_tasks: BackgroundTasks):
     """
-    Starts a new analysis job.
+    Starts a new analysis job using FastAPI background tasks.
     """
     try:
         analysis_id = executor.generate_analysis_id()
         # The request body is now a Pydantic model, so we convert it to a dict
-        params = request.dict()
+        params = request.model_dump()
+        
+        # Start the analysis using background tasks
+        background_tasks.add_task(executor.run_analysis_sync, analysis_id, params)
+        
         result = executor.start_analysis_execution(analysis_id, params)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to start analysis: " + str(e))
 
 @router.post("/{analysis_id}/execute")
-async def execute_analysis(analysis_id: str, request: Request):
+async def execute_analysis(analysis_id: str, request: Request, background_tasks: BackgroundTasks):
     try:
         params = await request.json() if request.headers.get("content-type", "").startswith("application/json") else None
         if params and not executor.validate_execution_parameters(params):
             raise HTTPException(status_code=400, detail="Invalid execution parameters")
+        
+        # Start the analysis using background tasks
+        background_tasks.add_task(executor.run_analysis_sync, analysis_id, params)
+        
         result = executor.start_analysis_execution(analysis_id, params)
         return JSONResponse(status_code=202, content=result)
     except RuntimeError as e:
@@ -174,7 +182,7 @@ async def point_query(
     results = executor.get_results(analysis_id)
     if results is None:
         raise HTTPException(status_code=404, detail="Analysis not found or not completed")
-    if results.get("status") != "completed":
+    if results.get("analysis_metadata", {}).get("status") != "completed":
         raise HTTPException(status_code=400, detail="Analysis not completed")
 
     # Get TINs and metadata
@@ -235,7 +243,7 @@ async def batch_point_query(
     results = executor.get_results(analysis_id)
     if results is None:
         raise HTTPException(status_code=404, detail="Analysis not found or not completed")
-    if results.get("status") != "completed":
+    if results.get("analysis_metadata", {}).get("status") != "completed":
         raise HTTPException(status_code=400, detail="Analysis not completed")
 
     surface_tins = results.get("surface_tins")
@@ -315,7 +323,7 @@ async def get_3d_visualization_data(
         if results is None:
             raise HTTPException(status_code=404, detail="Analysis not found or not completed")
         
-        if results.get("status") != "completed":
+        if results.get("analysis_metadata", {}).get("status") != "completed":
             raise HTTPException(status_code=400, detail="Analysis not completed")
         
         # Get surface data

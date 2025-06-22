@@ -4,7 +4,6 @@ Utilities for data serialization.
 import numpy as np
 import logging
 from typing import Any, Dict, List, Union
-import threading
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,6 @@ def make_json_serializable(data: Any) -> Any:
     Handles:
     - NumPy arrays and scalars
     - SciPy objects (Delaunay, etc.)
-    - Threading primitives (locks, threads)
     - Custom objects with __dict__ or __slots__
     - Sets and other collections
     """
@@ -49,11 +47,6 @@ def make_json_serializable(data: Any) -> Any:
         if hasattr(data, '__class__') and 'scipy' in str(data.__class__):
             logger.warning(f"Converting SciPy object {type(data)} to serializable format")
             return _convert_scipy_object(data)
-            
-        # Handle threading primitives
-        if isinstance(data, (threading.Lock, threading.RLock, threading.Thread)):
-            logger.warning(f"Removing threading primitive {type(data)} from serialization")
-            return None
             
         # Handle objects with __dict__ (custom classes)
         if hasattr(data, '__dict__'):

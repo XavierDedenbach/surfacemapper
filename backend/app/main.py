@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 import logging
 import json
 import traceback
+from contextlib import asynccontextmanager
 from app.routes import surfaces, analysis
 from app.utils.serialization import make_json_serializable, validate_json_serializable
 
@@ -28,10 +29,20 @@ def debug_jsonable_encoder(obj, *args, **kwargs):
 
 fastapi_encoders.jsonable_encoder = debug_jsonable_encoder
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup and shutdown events."""
+    # Startup
+    logger.info("Starting Surface Mapper Backend API")
+    yield
+    # Shutdown
+    logger.info("Shutting down Surface Mapper Backend API")
+
 app = FastAPI(
     title="Surface Mapper Backend API",
     description="Backend API for surface analysis and processing",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -54,70 +65,6 @@ async def log_exceptions_middleware(request: Request, call_next):
         logger.error(traceback.format_exc())
         raise
 
-# Custom middleware to ensure JSON serialization
-@app.middleware("http")
-async def serialization_middleware(request: Request, call_next):
-    """Middleware to ensure all responses are JSON serializable."""
-    response = await call_next(request)
-    
-    # Only process JSON responses
-    if response.headers.get("content-type", "").startswith("application/json"):
-        try:
-            # Get the response body
-            body = b""
-            async for chunk in response.body_iterator:
-                body += chunk
-            
-            # Parse the JSON
-            try:
-                data = json.loads(body.decode())
-            except json.JSONDecodeError:
-                # If it's not valid JSON, return as is
-                return Response(content=body, status_code=response.status_code, headers=dict(response.headers))
-            
-            # Check for threading primitives in the response data
-            def check_threading_primitives(obj, path="response"):
-                import threading
-                import _thread
-                if isinstance(obj, (threading.Thread, threading.Lock, threading.RLock, _thread.lock)):
-                    logger.error(f"Threading primitive found in response at {path}: {type(obj)}")
-                elif isinstance(obj, dict):
-                    for k, v in obj.items():
-                        check_threading_primitives(v, f"{path}.{k}")
-                elif isinstance(obj, (list, tuple, set)):
-                    for i, v in enumerate(obj):
-                        check_threading_primitives(v, f"{path}[{i}]")
-            
-            check_threading_primitives(data)
-            
-            # Apply our serialization utility
-            serialized_data = make_json_serializable(data)
-            
-            # Validate serialization
-            if not validate_json_serializable(serialized_data):
-                logger.error("Response still not JSON serializable after conversion")
-                return JSONResponse(
-                    status_code=500,
-                    content={"error": "Serialization failed"}
-                )
-            
-            # Return the serialized response
-            return JSONResponse(
-                content=serialized_data,
-                status_code=response.status_code,
-                headers=dict(response.headers)
-            )
-            
-        except Exception as e:
-            logger.error(f"Error in serialization middleware: {e}")
-            logger.error(traceback.format_exc())
-            return JSONResponse(
-                status_code=500,
-                content={"error": f"Serialization error: {str(e)}"}
-            )
-    
-    return response
-
 # Include routers
 app.include_router(surfaces.router, prefix="/api/surfaces", tags=["surfaces"])
 app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
@@ -126,16 +73,6 @@ app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy", "service": "Surface Mapper Backend API"}
-
-@app.on_event("startup")
-async def startup_event():
-    """Application startup event."""
-    logger.info("Starting Surface Mapper Backend API")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Application shutdown event."""
-    logger.info("Shutting down Surface Mapper Backend API")
 
 @app.get("/")
 async def root():
