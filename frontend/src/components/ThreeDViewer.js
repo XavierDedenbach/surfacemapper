@@ -11,8 +11,8 @@ const ThreeDViewer = ({
   onPointHover, 
   selectedSurfaces
 }) => {
-  const surfaces = analysisResult?.results?.surfaces || [];
-  const analysisBoundary = analysisResult?.results?.analysis_boundary || null;
+  const surfaces = analysisResult?.surfaces || [];
+  const analysisBoundary = analysisResult?.analysis_boundary || null;
 
   // Validate props
   const data = {

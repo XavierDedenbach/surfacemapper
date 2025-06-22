@@ -173,7 +173,9 @@ def calculate_volume_between_surfaces(
 
 def _calculate_volume_pyvista(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
     """
-    Calculate volume using PyVista mesh operations.
+    Calculate volume using a triangle-based prism method via PyVista.
+    This is more accurate than the simple prism method as it correctly
+    calculates the area of the base of each prism.
     
     Args:
         bottom_surface: 3D points representing bottom surface [N, 3]
@@ -190,28 +192,15 @@ def _calculate_volume_pyvista(bottom_surface: np.ndarray, top_surface: np.ndarra
         
         # Check for other degenerate cases
         if _is_degenerate_surface(bottom_surface) or _is_degenerate_surface(top_surface):
-            logger.info("Degenerate surface detected, using prism method")
+            logger.info("Degenerate surface detected, falling back to simple prism method")
             return _calculate_volume_prism_method(bottom_surface, top_surface)
         
-        # Create PyVista point clouds
-        bottom_cloud = pv.PolyData(bottom_surface.astype(np.float32))
-        top_cloud = pv.PolyData(top_surface.astype(np.float32))
-        
-        # Create meshes from point clouds using Delaunay triangulation
-        bottom_mesh = bottom_cloud.delaunay_2d()
-        top_mesh = top_cloud.delaunay_2d()
-        
-        # Check if triangulation was successful
-        if bottom_mesh.n_cells == 0 or top_mesh.n_cells == 0:
-            logger.warning("Delaunay triangulation failed, falling back to prism method")
-            return _calculate_volume_prism_method(bottom_surface, top_surface)
-        
-        # Use improved prism method for better accuracy
-        return _calculate_volume_improved_prism(bottom_surface, top_surface)
+        # This is the core of the improved method.
+        return _calculate_volume_triangle_based(bottom_surface, top_surface)
         
     except Exception as e:
-        logger.error(f"PyVista volume calculation failed: {e}")
-        logger.info("Falling back to prism method")
+        logger.error(f"PyVista volume calculation failed: {e}", exc_info=True)
+        logger.info("Falling back to simple prism method")
         return _calculate_volume_prism_method(bottom_surface, top_surface)
 
 
@@ -300,35 +289,6 @@ def _calculate_pyramid_volume(bottom_surface: np.ndarray, top_surface: np.ndarra
         return _calculate_volume_prism_method(bottom_surface, top_surface)
 
 
-def _calculate_volume_improved_prism(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
-    """
-    Calculate volume using improved prism method with better area estimation.
-    
-    Args:
-        bottom_surface: 3D points representing bottom surface [N, 3]
-        top_surface: 3D points representing top surface [N, 3]
-        
-    Returns:
-        Volume in cubic units
-    """
-    # Calculate vertical distances (thickness) at each point
-    thicknesses = np.abs(top_surface[:, 2] - bottom_surface[:, 2])
-    
-    # For regular grids, calculate area per point more accurately
-    if len(bottom_surface) > 1:
-        # Try to detect if this is a regular grid
-        if _is_regular_grid(bottom_surface):
-            volume = _calculate_volume_triangle_based(bottom_surface, top_surface)
-        else:
-            # For irregular grids, use triangulation-based volume calculation
-            volume = _calculate_volume_triangle_based(bottom_surface, top_surface)
-    else:
-        # Single point case
-        volume = thicknesses[0] if len(thicknesses) > 0 else 0.0
-    
-    return volume
-
-
 def _calculate_volume_triangle_based(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:
     """
     Calculate volume using triangle-based method for regular grids.
@@ -341,12 +301,13 @@ def _calculate_volume_triangle_based(bottom_surface: np.ndarray, top_surface: np
         Volume in cubic units
     """
     try:
-        # Create PyVista point cloud and triangulate
-        cloud = pv.PolyData(bottom_surface.astype(np.float32))
+        # Create PyVista point cloud, clean it, and triangulate
+        cloud = pv.PolyData(bottom_surface.astype(np.float32)).clean()
         mesh = cloud.delaunay_2d()
         
         if mesh.n_cells == 0:
             # Fallback to simple prism method
+            logger.warning("Triangle-based method failed: Delaunay triangulation resulted in 0 cells. Falling back to simple prism method.")
             return _calculate_volume_prism_method(bottom_surface, top_surface)
         
         total_volume = 0.0

@@ -184,11 +184,11 @@ function App() {
           );
         }
         return (
-          <div className="flex flex-col h-[calc(100vh-120px)]">
-            <div className="flex-grow h-4/5">
+          <div className="relative h-screen">
+            <div className="absolute top-0 left-0 w-full h-full">
                 <ThreeDViewer analysisResult={analysisResult} onBack={handleReturnToSetup} />
             </div>
-            <div className="flex-none h-1/5 bg-white p-4 overflow-auto">
+            <div className="absolute bottom-4 left-4 max-h-1/4 w-auto bg-white p-4 overflow-auto rounded-lg shadow-lg">
                 <DataTable analysisResult={analysisResult} tonnages={tonnageParams} />
             </div>
           </div>

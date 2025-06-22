@@ -4,34 +4,15 @@ import React, { useState } from 'react';
  * DataTable component for displaying analysis results
  * Shows volume, thickness, and compaction rate data in organized tables
  */
-const DataTable = ({ 
-  volumeResults, 
-  thicknessResults, 
-  compactionResults, 
-  onSurfaceSelection,
-  selectedSurfaces,
-  analysisResult,
-  tonnages
-}) => {
-  // Validate props
-  const data = {
-    volumeResults: Array.isArray(volumeResults) ? volumeResults : [],
-    thicknessResults: Array.isArray(thicknessResults) ? thicknessResults : [],
-    compactionResults: Array.isArray(compactionResults) ? compactionResults : []
-  };
+const DataTable = ({ analysisResult, tonnages }) => {
+  // Validate props and extract data from the main analysisResult object
+  const volumeData = analysisResult?.volume_results || [];
+  const thicknessData = analysisResult?.thickness_results || [];
+  const compactionData = analysisResult?.compaction_results || [];
 
-  const callbacks = {
-    onSurfaceSelection: onSurfaceSelection || (() => {}),
-    selectedSurfaces: Array.isArray(selectedSurfaces) ? selectedSurfaces : []
-  };
-
-  const [activeTab, setActiveTab] = useState('volume');
-  const [sortField, setSortField] = useState('layer_designation');
+  const [activeTab, setActiveTab] = useState('summary');
+  const [sortField, setSortField] = useState('layer_name');
   const [sortDirection, setSortDirection] = useState('asc');
-
-  const results = analysisResult?.results;
-  const thicknessData = results?.thickness_results || [];
-  const compactionData = results?.compaction_results || [];
 
   // Handle sort with validation
   const handleSort = (field) => {
@@ -77,15 +58,8 @@ const DataTable = ({
     return typeof value === 'number' ? value.toFixed(decimals) : value;
   };
 
-  // Handle surface selection with validation
-  const handleSurfaceClick = (layerDesignation) => {
-    if (layerDesignation && callbacks.onSurfaceSelection) {
-      callbacks.onSurfaceSelection(layerDesignation);
-    }
-  };
-
-  const getTonnageForLayer = (layerIndex) => {
-    const tonnageInfo = tonnages.find(t => t.layer_index === layerIndex);
+  const getTonnageForLayer = (layerName) => {
+    const tonnageInfo = tonnages.find(t => t.layer_name === layerName);
     return tonnageInfo ? tonnageInfo.tonnage : 'N/A';
   };
 
@@ -95,40 +69,17 @@ const DataTable = ({
       <table className="data-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('layer_designation')}>
-              Layer Designation
-              {sortField === 'layer_designation' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th onClick={() => handleSort('volume_cubic_yards')}>
-              Volume (cubic yards)
-              {sortField === 'volume_cubic_yards' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th>Confidence Interval</th>
-            <th onClick={() => handleSort('uncertainty')}>
-              Uncertainty (%)
-              {sortField === 'uncertainty' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
+            <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+            <th onClick={() => handleSort('volume_cubic_yards')}>Volume (cubic yards)</th>
           </tr>
         </thead>
         <tbody>
-          {sortData(data.volumeResults).map((result, index) => (
+          {sortData(volumeData).map((result, index) => (
             <tr 
               key={index}
-              className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
-              onClick={() => handleSurfaceClick(result.layer_designation)}
             >
-              <td>{result.layer_designation}</td>
+              <td>{result.layer_name}</td>
               <td>{formatNumber(result.volume_cubic_yards)}</td>
-              <td>
-                {formatNumber(result.confidence_interval[0])} - {formatNumber(result.confidence_interval[1])}
-              </td>
-              <td>{formatNumber(result.uncertainty)}</td>
             </tr>
           ))}
         </tbody>
@@ -142,47 +93,21 @@ const DataTable = ({
       <table className="data-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('layer_designation')}>
-              Layer Designation
-              {sortField === 'layer_designation' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th onClick={() => handleSort('average_thickness_feet')}>
-              Average (feet)
-              {sortField === 'average_thickness_feet' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th onClick={() => handleSort('min_thickness_feet')}>
-              Minimum (feet)
-              {sortField === 'min_thickness_feet' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th onClick={() => handleSort('max_thickness_feet')}>
-              Maximum (feet)
-              {sortField === 'max_thickness_feet' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th>Confidence Interval</th>
+            <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+            <th onClick={() => handleSort('average_thickness_feet')}>Average (feet)</th>
+            <th onClick={() => handleSort('min_thickness_feet')}>Minimum (feet)</th>
+            <th onClick={() => handleSort('max_thickness_feet')}>Maximum (feet)</th>
           </tr>
         </thead>
         <tbody>
           {sortData(thicknessData).map((layer, index) => (
             <tr 
               key={index}
-              className={callbacks.selectedSurfaces?.includes(layer.layer_name) ? 'selected' : ''}
-              onClick={() => handleSurfaceClick(layer.layer_name)}
             >
               <td>{layer.layer_name}</td>
-              <td>{formatNumber(layer.average_thickness?.toFixed(3))}</td>
-              <td>{formatNumber(layer.min_thickness?.toFixed(3))}</td>
-              <td>{formatNumber(layer.max_thickness?.toFixed(3))}</td>
-              <td>
-                {formatNumber(layer.confidence_interval[0]?.toFixed(3))} - {formatNumber(layer.confidence_interval[1]?.toFixed(3))}
-              </td>
+              <td>{formatNumber(layer.average_thickness_feet, 3)}</td>
+              <td>{formatNumber(layer.min_thickness_feet, 3)}</td>
+              <td>{formatNumber(layer.max_thickness_feet, 3)}</td>
             </tr>
           ))}
         </tbody>
@@ -196,46 +121,17 @@ const DataTable = ({
       <table className="data-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('layer_designation')}>
-              Layer Designation
-              {sortField === 'layer_designation' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th onClick={() => handleSort('compaction_rate_lbs_per_cubic_yard')}>
-              Compaction Rate (lbs/cubic yard)
-              {sortField === 'compaction_rate_lbs_per_cubic_yard' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
-            <th onClick={() => handleSort('tonnage_used')}>
-              Tonnage Used (tons)
-              {sortField === 'tonnage_used' && (
-                <span className={`sort-arrow ${sortDirection}`}>▼</span>
-              )}
-            </th>
+            <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+            <th onClick={() => handleSort('compaction_rate_lbs_per_cubic_yard')}>Compaction Rate (lbs/cubic yard)</th>
           </tr>
         </thead>
         <tbody>
           {sortData(compactionData).map((result, index) => (
             <tr 
               key={index}
-              className={callbacks.selectedSurfaces?.includes(result.layer_designation) ? 'selected' : ''}
-              onClick={() => handleSurfaceClick(result.layer_designation)}
             >
-              <td>{result.layer_designation}</td>
-              <td>
-                {result.compaction_rate_lbs_per_cubic_yard 
-                  ? formatNumber(result.compaction_rate_lbs_per_cubic_yard) 
-                  : '--'
-                }
-              </td>
-              <td>
-                {result.tonnage_used 
-                  ? formatNumber(result.tonnage_used) 
-                  : '--'
-                }
-              </td>
+              <td>{result.layer_name}</td>
+              <td>{formatNumber(result.compaction_rate_lbs_per_cubic_yard)}</td>
             </tr>
           ))}
         </tbody>
@@ -244,91 +140,83 @@ const DataTable = ({
   );
 
   const renderSummary = () => {
-    const totalVolume = data.volumeResults?.reduce((sum, result) => sum + (result.volume_cubic_yards || 0), 0) || 0;
-    const avgThickness = data.thicknessResults?.reduce((sum, result) => sum + (result.average_thickness_feet || 0), 0) / (data.thicknessResults?.length || 1) || 0;
-    const validCompactionRates = data.compactionResults?.filter(result => result.compaction_rate_lbs_per_cubic_yard) || [];
-    const avgCompactionRate = validCompactionRates.length > 0 
-      ? validCompactionRates.reduce((sum, result) => sum + result.compaction_rate_lbs_per_cubic_yard, 0) / validCompactionRates.length 
-      : 0;
+    const summaryData = analysisResult?.analysis_summary || [];
 
     return (
-      <div className="summary-container">
+      <div className="table-container">
         <h3>Analysis Summary</h3>
-        <div className="summary-grid">
-          <div className="summary-item">
-            <label>Total Volume:</label>
-            <span>{formatNumber(totalVolume)} cubic yards</span>
-          </div>
-          <div className="summary-item">
-            <label>Average Thickness:</label>
-            <span>{formatNumber(avgThickness)} feet</span>
-          </div>
-          <div className="summary-item">
-            <label>Average Compaction Rate:</label>
-            <span>{formatNumber(avgCompactionRate)} lbs/cubic yard</span>
-          </div>
-          <div className="summary-item">
-            <label>Layers Analyzed:</label>
-            <span>{data.volumeResults?.length || 0}</span>
-          </div>
-        </div>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+              <th onClick={() => handleSort('volume_cubic_yards')}>Volume (Cubic Yards)</th>
+              <th onClick={() => handleSort('avg_thickness_feet')}>Avg. Thickness (ft)</th>
+              <th onClick={() => handleSort('compaction_rate_lbs_per_cubic_yard')}>Compaction (lbs/cu.yd)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortData(summaryData).map((item, index) => (
+              <tr key={index}>
+                <td>{item.layer_name}</td>
+                <td>{formatNumber(item.volume_cubic_yards)}</td>
+                <td>{formatNumber(item.avg_thickness_feet, 3)}</td>
+                <td>{formatNumber(item.compaction_rate_lbs_per_cubic_yard)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     );
   };
 
-  if (!results) {
-    return <p>No analysis results available.</p>;
-  }
+  const renderTabs = () => (
+    <div className="tabs">
+      <button 
+        className={`tab ${activeTab === 'summary' ? 'active' : ''}`}
+        onClick={() => setActiveTab('summary')}
+      >
+        Summary
+      </button>
+      <button 
+        className={`tab ${activeTab === 'volume' ? 'active' : ''}`}
+        onClick={() => setActiveTab('volume')}
+      >
+        Volume
+      </button>
+      <button 
+        className={`tab ${activeTab === 'thickness' ? 'active' : ''}`}
+        onClick={() => setActiveTab('thickness')}
+      >
+        Thickness
+      </button>
+      <button 
+        className={`tab ${activeTab === 'compaction' ? 'active' : ''}`}
+        onClick={() => setActiveTab('compaction')}
+      >
+        Compaction
+      </button>
+    </div>
+  );
+
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'volume':
+        return renderVolumeTable();
+      case 'thickness':
+        return renderThicknessTable();
+      case 'compaction':
+        return renderCompactionTable();
+      case 'summary':
+      default:
+        return renderSummary();
+    }
+  };
 
   return (
     <div className="data-table-container">
-      <div className="table-tabs">
-        <button 
-          className={`tab-button ${activeTab === 'summary' ? 'active' : ''}`}
-          onClick={() => setActiveTab('summary')}
-        >
-          Summary
-        </button>
-        <button 
-          className={`tab-button ${activeTab === 'volume' ? 'active' : ''}`}
-          onClick={() => setActiveTab('volume')}
-        >
-          Volume Analysis
-        </button>
-        <button 
-          className={`tab-button ${activeTab === 'thickness' ? 'active' : ''}`}
-          onClick={() => setActiveTab('thickness')}
-        >
-          Thickness Analysis
-        </button>
-        <button 
-          className={`tab-button ${activeTab === 'compaction' ? 'active' : ''}`}
-          onClick={() => setActiveTab('compaction')}
-        >
-          Compaction Analysis
-        </button>
-      </div>
-
-      <div className="table-content">
-        {activeTab === 'summary' && renderSummary()}
-        {activeTab === 'volume' && renderVolumeTable()}
-        {activeTab === 'thickness' && renderThicknessTable()}
-        {activeTab === 'compaction' && renderCompactionTable()}
-      </div>
-
-      <div className="table-actions">
-        <button onClick={() => {
-          // TODO: Implement export functionality
-          console.log('Export data');
-        }}>
-          Export Results
-        </button>
-        <button onClick={() => {
-          // TODO: Implement print functionality
-          window.print();
-        }}>
-          Print Report
-        </button>
+      {renderTabs()}
+      <div className="tab-content">
+        {renderActiveTab()}
       </div>
     </div>
   );

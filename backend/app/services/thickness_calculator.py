@@ -517,7 +517,7 @@ def calculate_thickness_statistics(thicknesses: np.ndarray, invalid_points: Opti
             return {
                 'min': np.nan,
                 'max': np.nan,
-                'mean': np.nan,
+                'average': np.nan,
                 'median': np.nan,
                 'std': np.nan,
                 'count': 0,
@@ -531,7 +531,7 @@ def calculate_thickness_statistics(thicknesses: np.ndarray, invalid_points: Opti
         stats = {
             'min': np.min(valid_thicknesses),
             'max': np.max(valid_thicknesses),
-            'mean': np.mean(valid_thicknesses),
+            'average': np.mean(valid_thicknesses),
             'median': np.median(valid_thicknesses),
             'std': np.std(valid_thicknesses),
             'count': total_count,
@@ -545,7 +545,7 @@ def calculate_thickness_statistics(thicknesses: np.ndarray, invalid_points: Opti
         return {
             'min': np.nan,
             'max': np.nan,
-            'mean': np.nan,
+            'average': np.nan,
             'median': np.nan,
             'std': np.nan,
             'count': 0,
