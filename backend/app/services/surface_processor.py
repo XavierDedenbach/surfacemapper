@@ -203,7 +203,7 @@ class SurfaceProcessor:
             thickness_stats = thickness_calculator.calculate_thickness_statistics(thickness_data)
             
             # Calculate volume
-            volume_cubic_yards = volume_calculator.calculate_volume_between_surfaces(
+            volume_result = volume_calculator.calculate_volume_difference(
                 lower_surface,
                 upper_surface
             )
@@ -211,14 +211,14 @@ class SurfaceProcessor:
             # Calculate compaction rate if tonnage is available
             compaction_rate = None
             tonnage_used = tonnage_dict.get(i)
-            if tonnage_used and volume_cubic_yards > 0:
+            if tonnage_used and volume_result.volume_cubic_yards > 0:
                 # Assuming tonnage is in US tons, material density in lbs/cubic yard
-                compaction_rate = (tonnage_used * 2000) / volume_cubic_yards
+                compaction_rate = (tonnage_used * 2000) / volume_result.volume_cubic_yards
 
             # Store results in the expected format
             volume_results.append({
                 "layer_name": layer_name,
-                "volume_cubic_yards": volume_cubic_yards,
+                "volume_cubic_yards": volume_result.volume_cubic_yards,
             })
             
             thickness_results.append({
@@ -237,7 +237,7 @@ class SurfaceProcessor:
 
             analysis_layers.append({
                 "layer_name": layer_name,
-                "volume_cubic_yards": volume_cubic_yards,
+                "volume_cubic_yards": volume_result.volume_cubic_yards,
                 "avg_thickness_feet": thickness_stats.get('average'),
                 "min_thickness_feet": thickness_stats.get('min'),
                 "max_thickness_feet": thickness_stats.get('max'),

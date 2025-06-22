@@ -9,3 +9,7 @@ Center: Latitude 37.774900, Longitude -122.419400
     [37.776270, -122.417670],  // Northeast corner
     [37.776270, -122.421130]   // Northwest corner
 ]
+
+docker-compose down && docker-compose up -d --build --force-recreate
+
+docker-compose logs --tail "100" backend
