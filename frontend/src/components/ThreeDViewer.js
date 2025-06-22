@@ -27,6 +27,7 @@ const ThreeDViewer = ({
 
   const mountRef = useRef(null);
   const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
   const rendererRef = useRef(null);
   const controlsRef = useRef(null);
   const raycasterRef = useRef(new THREE.Raycaster());
@@ -69,9 +70,10 @@ const ThreeDViewer = ({
         75,
         mountNode.clientWidth / mountNode.clientHeight,
         0.1,
-        1000
+        2000 // Increased far clipping plane
       );
-      camera.position.set(10, 10, 10);
+      camera.position.set(15, 15, 15);
+      cameraRef.current = camera;
 
       // Renderer setup
       const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -109,11 +111,11 @@ const ThreeDViewer = ({
       // Animation loop
       const animate = () => {
         requestAnimationFrame(animate);
-        if (controls && controls.update) {
-          controls.update();
+        if (controlsRef.current) {
+          controlsRef.current.update();
         }
-        if (renderer && scene && camera) {
-          renderer.render(scene, camera);
+        if (rendererRef.current && sceneRef.current && cameraRef.current) {
+          rendererRef.current.render(sceneRef.current, cameraRef.current);
         }
       };
       animate();
@@ -135,16 +137,14 @@ const ThreeDViewer = ({
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
-      if (!mountRef.current || !rendererRef.current || !sceneRef.current) return;
+      if (!mountRef.current || !rendererRef.current || !cameraRef.current) return;
 
       const width = mountRef.current.clientWidth;
       const height = mountRef.current.clientHeight;
 
-      const camera = sceneRef.current.children.find(child => child.type === 'PerspectiveCamera');
-      if (camera) {
-        camera.aspect = width / height;
-        camera.updateProjectionMatrix();
-      }
+      const camera = cameraRef.current;
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
 
       rendererRef.current.setSize(width, height);
     };
@@ -220,7 +220,7 @@ const ThreeDViewer = ({
     const fov = 75;
     const cameraZ = Math.abs(maxDim / 2 / Math.tan((fov * Math.PI) / 360));
 
-    const camera = scene.children.find(child => child.type === 'PerspectiveCamera');
+    const camera = cameraRef.current;
     if (camera) {
       camera.position.set(center.x + cameraZ, center.y + cameraZ, center.z + cameraZ);
       camera.lookAt(center);
@@ -239,9 +239,11 @@ const ThreeDViewer = ({
       mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
       // Raycasting for point analysis
-      raycasterRef.current.setFromCamera(mouseRef.current, 
-        sceneRef.current.children.find(child => child.type === 'PerspectiveCamera')
-      );
+      if (cameraRef.current) {
+        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+      } else {
+        return; // Camera not ready
+      }
 
       const intersects = raycasterRef.current.intersectObjects(
         sceneRef.current.children.filter(child => child.type === 'Mesh')

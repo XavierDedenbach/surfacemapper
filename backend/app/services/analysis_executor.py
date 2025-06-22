@@ -124,20 +124,36 @@ class AnalysisExecutor:
             first_surface = surfaces_to_process[0]
             vertices = first_surface['vertices']
             
-            # Find minimum Z coordinate
+            # --- High-Density Baseline Generation ---
+            # Determine the bounding box of the original surface
+            min_x, max_x = np.min(vertices[:, 0]), np.max(vertices[:, 0])
+            min_y, max_y = np.min(vertices[:, 1]), np.max(vertices[:, 1])
             min_z = np.min(vertices[:, 2])
+            
+            # Create a new grid with a similar number of points
+            num_vertices = len(vertices)
+            # Calculate grid dimensions to approximate original density
+            aspect_ratio = (max_y - min_y) / (max_x - min_x) if (max_x - min_x) != 0 else 1
+            num_x = int(np.sqrt(num_vertices / aspect_ratio))
+            num_y = int(num_x * aspect_ratio)
+
+            # Generate grid points
+            x_coords = np.linspace(min_x, max_x, num_x)
+            y_coords = np.linspace(min_y, max_y, num_y)
+            grid_x, grid_y = np.meshgrid(x_coords, y_coords)
+            
+            # Set the baseline elevation
             baseline_z = min_z - 1.0  # 1 foot below minimum
+
+            # Create the new baseline vertices
+            baseline_vertices = np.vstack([grid_x.ravel(), grid_y.ravel(), np.full(grid_x.size, baseline_z)]).T
             
-            # Create baseline surface with same X,Y coordinates but flat Z at baseline_z
-            baseline_vertices = vertices.copy()
-            baseline_vertices[:, 2] = baseline_z
-            
-            # Create baseline surface data
+            # For a grid, we can't reuse the original faces. A simple point cloud is best here.
             baseline_surface = {
                 "id": f"baseline_{first_surface['id']}",
                 "name": "Baseline Surface (1ft below minimum)",
                 "vertices": baseline_vertices,
-                "faces": first_surface['faces']  # Use same faces as original surface
+                "faces": []  # Use an empty list instead of None for downstream compatibility
             }
             
             # Add baseline surface to the beginning of the list
@@ -172,10 +188,20 @@ class AnalysisExecutor:
         final_status = "completed" if results_are_ready else "processing"
 
         logger.info(f"[{analysis_id}] Updating job status to {final_status}")
+
+        # Add georeferencing metadata to the results
+        georef_params = params.get('georef', {})
+        georef = {
+            "lat": georef_params.get('anchor_lat', 0),
+            "lon": georef_params.get('anchor_lon', 0),
+            "orientation": georef_params.get('orientation', 0),
+            "scale": georef_params.get('scale', 1)
+        }
         
         # Store results for visualization - ensure no threading primitives
         self._results_cache[analysis_id] = {
             **serializable_results,
+            "georef": georef,
             "analysis_metadata": {"status": final_status}
         }
         logger.info(f"[{analysis_id}] Results cached successfully. Analysis status: {final_status}.")

@@ -99,13 +99,20 @@ function App() {
           const status = result.status || (result.analysis_metadata && result.analysis_metadata.status);
 
           if (status === 'completed') {
+            console.log("Analysis reported as 'completed'. Full result from backend:", result);
+
             const isVolumeAnalysis = surfaces.length > 1 || generateBaseline;
             const resultsAreReady = !isVolumeAnalysis || (result.volume_results && result.volume_results.length > 0);
+            
+            console.log(`Is Volume Analysis? ${isVolumeAnalysis}`);
+            console.log(`Are Results Ready? ${resultsAreReady}`);
 
             if (resultsAreReady) {
+              console.log("Results are ready. Setting state and displaying results page.");
               setAnalysisResult(result);
               setWizardStep(2);
             } else {
+              console.log("Results are NOT ready. Polling again in 3 seconds.");
               // It's marked 'completed' but key results are missing. Poll again.
               setTimeout(pollForResults, 3000);
             }

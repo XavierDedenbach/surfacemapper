@@ -115,6 +115,13 @@ async def get_analysis_results(analysis_id: str, include: Optional[str] = Query(
         if current_status == "completed":
             results = executor.get_results(analysis_id, include)
             if results:
+                logger.info(f"--- Serving Results for Analysis ID: {analysis_id} ---")
+                # Log a summary of what's being sent
+                volume_summary = "present" if "volume_results" in results and results["volume_results"] else "absent"
+                thickness_summary = "present" if "thickness_results" in results and results["thickness_results"] else "absent"
+                logger.info(f"  - Volume Results: {volume_summary}")
+                logger.info(f"  - Thickness Results: {thickness_summary}")
+                logger.info("-------------------------------------------------")
                 return results
             else:
                 # This case might happen in a race condition.

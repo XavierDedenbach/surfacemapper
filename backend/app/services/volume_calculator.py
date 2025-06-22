@@ -32,25 +32,26 @@ class VolumeCalculator:
     def __init__(self):
         self.tolerance = 0.01  # 1% tolerance for cross-validation
     
-    def calculate_volume_difference(self, surface1: np.ndarray, surface2: np.ndarray) -> VolumeResult:
+    def calculate_volume_difference(self, surface1_data: Dict, surface2_data: Dict) -> VolumeResult:
         """
         Calculate volume difference between two surfaces using PyVista Delaunay triangulation
         """
         try:
-            # Convert numpy arrays to PyVista point clouds
-            pc1 = pv.PolyData(surface1)
-            pc2 = pv.PolyData(surface2)
-            
-            # Create meshes using PyVista's triangulation
-            mesh1 = pc1.delaunay_2d()
-            mesh2 = pc2.delaunay_2d()
-            
-            # Calculate volumes using PyVista's volume calculation
-            volume1 = mesh1.volume
-            volume2 = mesh2.volume
+            surface1 = surface1_data.get('vertices')
+            surface2 = surface2_data.get('vertices')
+
+            if surface1 is None or surface2 is None:
+                raise ValueError("Surface data is missing 'vertices'.")
+
+            # Defer to the more robust calculation method
+            volume_diff_cubic_feet = calculate_volume_between_surfaces(
+                surface1,
+                surface2,
+                method="pyvista"
+            )
             
             # Convert from cubic units to cubic yards (assuming input is in feet)
-            volume_diff_cubic_yards = abs(volume1 - volume2) / 27.0  # 27 cubic feet = 1 cubic yard
+            volume_diff_cubic_yards = volume_diff_cubic_feet / 27.0
             
             # Calculate confidence interval (simplified for now)
             uncertainty = volume_diff_cubic_yards * 0.05  # 5% uncertainty
@@ -65,6 +66,7 @@ class VolumeCalculator:
                 uncertainty=uncertainty
             )
         except Exception as e:
+            logger.error(f"Volume calculation failed: {e}", exc_info=True)
             # Return zero volume if calculation fails
             return VolumeResult(
                 volume_cubic_yards=0.0,

@@ -8,6 +8,9 @@ import pyvista as pv
 from . import triangulation, thickness_calculator
 from .volume_calculator import VolumeCalculator
 from ..utils.serialization import make_json_serializable
+import logging
+
+logger = logging.getLogger(__name__)
 
 class SurfaceProcessor:
     """
@@ -196,11 +199,14 @@ class SurfaceProcessor:
             layer_name = f"{lower_surface.get('name', 'Layer ' + str(i))} to {upper_surface.get('name', 'Layer ' + str(i+1))}"
 
             # Calculate thickness
-            thickness_data = thickness_calculator.calculate_thickness_between_surfaces(
+            thickness_data, invalid_points = thickness_calculator.calculate_thickness_between_surfaces(
                 upper_surface['vertices'],
                 lower_surface['vertices']
             )
-            thickness_stats = thickness_calculator.calculate_thickness_statistics(thickness_data)
+            thickness_stats = thickness_calculator.calculate_thickness_statistics(
+                thickness_data, 
+                invalid_points=invalid_points
+            )
             
             # Calculate volume
             volume_result = volume_calculator.calculate_volume_difference(
@@ -223,10 +229,9 @@ class SurfaceProcessor:
             
             thickness_results.append({
                 "layer_name": layer_name,
-                "average_thickness_feet": thickness_stats.get('average', 0),
+                "average_thickness_feet": thickness_stats.get('average') if thickness_stats.get('average') is not None else 0,
                 "min_thickness_feet": thickness_stats.get('min', 0),
                 "max_thickness_feet": thickness_stats.get('max', 0),
-                "std_dev_thickness_feet": thickness_stats.get('std_dev', 0),
             })
             
             compaction_results.append({
@@ -241,8 +246,31 @@ class SurfaceProcessor:
                 "avg_thickness_feet": thickness_stats.get('average'),
                 "min_thickness_feet": thickness_stats.get('min'),
                 "max_thickness_feet": thickness_stats.get('max'),
-                "std_dev_thickness_feet": thickness_stats.get('std_dev')
             })
+
+        # --- DETAILED LOGGING OF RESULTS ---
+        logger.info("--- Analysis Results Summary ---")
+        analysis_summary = []
+        for i, layer in enumerate(analysis_layers):
+            logger.info(f"  Layer {i}: {layer['layer_name']}")
+            logger.info(f"    - Volume: {layer['volume_cubic_yards']:.2f} cubic yards")
+            
+            avg_thickness = layer.get('avg_thickness_feet')
+            if avg_thickness is not None:
+                logger.info(f"    - Avg Thickness: {avg_thickness:.2f} feet")
+            else:
+                logger.info("    - Avg Thickness: N/A")
+                
+            logger.info(f"    - Min Thickness: {layer.get('min_thickness_feet', 0):.2f} feet")
+            logger.info(f"    - Max Thickness: {layer.get('max_thickness_feet', 0):.2f} feet")
+            analysis_summary.append({
+                'layer_name': layer['layer_name'],
+                'volume_cubic_yards': layer['volume_cubic_yards'],
+                'avg_thickness_feet': avg_thickness,
+                'min_thickness_feet': layer.get('min_thickness_feet'),
+                'max_thickness_feet': layer.get('max_thickness_feet')
+            })
+        logger.info("---------------------------------")
 
         # Convert numpy arrays to lists for JSON serialization
         for surface in processed_surfaces:
@@ -254,11 +282,11 @@ class SurfaceProcessor:
         # Create the result structure and ensure it's fully serializable
         result = {
             "surfaces": processed_surfaces,
-            "analysis_summary": analysis_layers,
+            "analysis_summary": analysis_summary,
             "volume_results": volume_results,
             "thickness_results": thickness_results,
             "compaction_results": compaction_results,
-            "surface_tins": [surface.get('faces', []) for surface in processed_surfaces],
+            "surface_tins": [{s.get('name'): s.get('faces')} for s in processed_surfaces],
             "surface_names": [surface.get('name', f'Surface {i}') for i, surface in enumerate(processed_surfaces)],
             "georef": {
                 "lat": 0.0,  # Default values - should be extracted from georeference_params

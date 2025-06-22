@@ -147,7 +147,7 @@ def calculate_thickness_between_surfaces(
     sample_points: Optional[np.ndarray] = None,
     sample_spacing: float = 1.0,
     method: str = 'uniform'
-) -> np.ndarray:
+) -> Tuple[np.ndarray, List[np.ndarray]]:
     """
     Calculate thickness between two surfaces at sample points.
     
@@ -160,6 +160,7 @@ def calculate_thickness_between_surfaces(
         
     Returns:
         Thickness values at sample points [K]
+        List of invalid sample points [K, 2]
     """
     try:
         # Create TINs for both surfaces
@@ -188,6 +189,7 @@ def calculate_thickness_between_surfaces(
         
         # Calculate thickness at each sample point
         thicknesses = np.zeros(len(sample_points))
+        invalid_sample_points = []
         
         for i, sample_point_2d in enumerate(sample_points):
             # Find upper surface Z at this point
@@ -198,12 +200,15 @@ def calculate_thickness_between_surfaces(
                 thicknesses[i] = upper_z - lower_z
             else:
                 thicknesses[i] = np.nan
-        
-        return thicknesses
+                # Check if point is within the convex hull of either surface before flagging
+                if _is_point_in_triangulation(sample_point_2d, upper_tin) or _is_point_in_triangulation(sample_point_2d, lower_tin):
+                    invalid_sample_points.append(sample_point_2d)
+
+        return thicknesses, invalid_sample_points
         
     except Exception as e:
         logger.error(f"Error calculating thickness between surfaces: {e}")
-        return np.full(len(sample_points) if sample_points is not None else 100, np.nan)
+        return np.full(len(sample_points) if sample_points is not None else 100, np.nan), []
 
 
 def _interpolate_z_at_point(point_2d: np.ndarray, surface_tin: Delaunay) -> float:
@@ -486,32 +491,42 @@ def optimize_sample_density(
         return max_spacing
 
 
-def calculate_thickness_statistics(thicknesses: np.ndarray) -> dict:
+def calculate_thickness_statistics(thicknesses: np.ndarray, invalid_points: Optional[List[np.ndarray]] = None) -> dict:
     """
-    Calculate statistical measures of thickness distribution.
+    Calculate statistics for thickness data.
     
     Args:
         thicknesses: Array of thickness values
+        invalid_points: List of 2D points where thickness could not be calculated
         
     Returns:
         Dictionary with thickness statistics
     """
     try:
-        total_count = len(thicknesses)
-        # Remove NaN values
-        valid_thicknesses = thicknesses[~np.isnan(thicknesses)]
-        valid_count = len(valid_thicknesses)
+        # Log invalid points if any
+        if invalid_points and len(invalid_points) > 0:
+            logger.warning(
+                f"{len(invalid_points)} points were within the boundary but could not be calculated. "
+                f"They will be excluded from the average. Points: {invalid_points}"
+            )
+
+        # Remove NaN and infinite values before calculation
+        valid_thicknesses = thicknesses[np.isfinite(thicknesses)]
         
-        if valid_count == 0:
+        if valid_thicknesses.size == 0:
             return {
                 'min': np.nan,
                 'max': np.nan,
                 'mean': np.nan,
                 'median': np.nan,
                 'std': np.nan,
-                'count': total_count,
-                'valid_count': valid_count
+                'count': 0,
+                'valid_count': 0
             }
+        
+        total_count = len(thicknesses)
+        # Remove NaN values
+        valid_count = len(valid_thicknesses)
         
         stats = {
             'min': np.min(valid_thicknesses),
