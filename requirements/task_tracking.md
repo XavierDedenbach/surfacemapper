@@ -1945,3 +1945,15 @@ Major Task 5.0 has been **fully completed** with all 4 major subtasks implemente
 - **7.3.2 Implement Data Export Logic**  
   ✅ Implemented `DataExporter` service in `services/data_export.py` to pass all tests. The implementation supports multiple export formats, handles all edge cases, validates file paths, and produces correctly formatted output files. All tests pass, confirming the export functionality is production-ready.
 
+### Minor Task 9.1.1: Write Binary PLY Format Tests (COMPLETED)
+- Created `backend/tests/test_binary_ply_parser.py` with comprehensive tests for binary PLY parsing:
+  - Endianness, normals/colors, large files, corrupted files, memory efficiency, property extraction, output format compatibility, downstream compatibility, and real file (`tv_test.ply`).
+- All tests pass, confirming robust binary PLY support and backward compatibility.
+
+### Minor Task 9.2.1: Fix PLY Parser for Binary Files (COMPLETED)
+- Updated `backend/app/utils/ply_parser.py`:
+  - Fixed `get_file_info()` to handle tuple-based elements structure.
+  - Improved error handling for corrupted/incomplete files.
+  - No changes to `parse_ply_file()` output format; backward compatibility maintained.
+- Confirmed fix by running all new and existing tests, including real-world binary PLY files.
+

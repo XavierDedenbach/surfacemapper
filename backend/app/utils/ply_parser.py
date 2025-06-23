@@ -38,7 +38,13 @@ class PLYParser:
             
         except Exception as e:
             logger.error(f"Error parsing PLY file {file_path}: {str(e)}")
-            raise
+            # Provide more specific error messages for common issues
+            if "corrupted" in str(e).lower() or "incomplete" in str(e).lower():
+                raise ValueError(f"PLY file appears to be corrupted or incomplete: {str(e)}")
+            elif "not found" in str(e).lower():
+                raise FileNotFoundError(f"PLY file not found: {file_path}")
+            else:
+                raise ValueError(f"Error parsing PLY file: {str(e)}")
     
     def _extract_vertices(self, plydata: PlyData) -> np.ndarray:
         """
@@ -104,9 +110,13 @@ class PLYParser:
         try:
             plydata = PlyData.read(file_path)
             
+            # Fix: plydata.elements is a tuple, not a dictionary
+            # Extract element names from the tuple
+            element_names = [elem.name for elem in plydata.elements]
+            
             return {
                 'format': plydata.header.format,
-                'elements': list(plydata.elements.keys()),
+                'elements': element_names,
                 'vertex_count': len(plydata['vertex']) if 'vertex' in plydata else 0,
                 'face_count': len(plydata['face']) if 'face' in plydata else 0,
                 'properties': {

@@ -50,11 +50,19 @@ async def upload_surface(file: UploadFile = File(...)):
     try:
         with open(temp_path, "rb") as f:
             if not validate_ply_format(f):
-                os.remove(temp_path)
+                # Safe file removal
+                try:
+                    os.remove(temp_path)
+                except FileNotFoundError:
+                    pass  # File already removed or doesn't exist
                 raise HTTPException(status_code=400, detail="Invalid PLY file format.")
     except Exception as e:
         logger.error(f"Failed to validate PLY file: {e}")
-        os.remove(temp_path)
+        # Safe file removal
+        try:
+            os.remove(temp_path)
+        except FileNotFoundError:
+            pass  # File already removed or doesn't exist
         raise HTTPException(status_code=400, detail="Invalid or corrupted PLY file.")
 
     # Generate a unique ID and cache the surface metadata and file path
