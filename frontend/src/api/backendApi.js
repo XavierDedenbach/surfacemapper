@@ -306,6 +306,53 @@ const backendApi = {
     const response = await api.get(`/api/analysis/${analysisId}/status`);
     return response.data;
   },
+
+  /**
+   * Query thickness at a point for a specific analysis
+   */
+  queryPointAnalysis: async (analysisId, x, y, coordinateSystem = 'utm') => {
+    const response = await api.post(`/api/analysis/${analysisId}/point_query`, {
+      x,
+      y,
+      coordinate_system: coordinateSystem,
+    });
+    return response.data;
+  },
+
+  /**
+   * Point query method for interactive thickness analysis
+   */
+  pointQuery: async (analysisId, queryParams) => {
+    const response = await api.post(`/api/analysis/${analysisId}/point_query`, queryParams);
+    return response.data;
+  },
+
+  /**
+   * Download thickness grid CSV for a completed analysis
+   */
+  downloadThicknessGridCSV: async (analysisId, spacing = 1.0) => {
+    try {
+      const response = await api.get(`/api/analysis/${analysisId}/thickness_grid_csv`, {
+        params: { spacing },
+        responseType: 'blob',
+      });
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `thickness_grid_${analysisId}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error downloading thickness grid CSV:', error.response ? error.response.data : error.message);
+      throw error;
+    }
+  },
 };
 
 // Request interceptor for logging and authentication

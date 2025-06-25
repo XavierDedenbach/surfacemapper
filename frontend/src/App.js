@@ -3,6 +3,7 @@ import './App.css';
 import InputForms from './components/InputForms';
 import ThreeDViewer from './components/ThreeDViewer';
 import DataTable from './components/DataTable';
+// import PointAnalysisPopup from './components/PointAnalysisPopup';
 import backendApi from './api/backendApi'; // Adjusted path if necessary
 
 function App() {
@@ -11,6 +12,7 @@ function App() {
   const [analysisResult, setAnalysisResult] = useState(null);
   const [tonnageParams, setTonnageParams] = useState([]);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [csvDownloadLoading, setCsvDownloadLoading] = useState(false);
 
   // State for the InputForms component
   const [surfaces, setSurfaces] = useState([]);
@@ -29,6 +31,10 @@ function App() {
       { lat: '', lon: '' },
     ],
   });
+
+  // Point query state
+  const [hoverInfo, setHoverInfo] = useState(null); // { x, y, thickness, lat, lon }
+  const [pointQueryLoading, setPointQueryLoading] = useState(false);
 
   useEffect(() => {
     let timer;
@@ -155,6 +161,66 @@ function App() {
     return 'An unknown error occurred.';
   };
 
+  // Handler for CSV download
+  const handleDownloadCSV = async () => {
+    console.log('CSV Download button clicked');
+    console.log('Analysis result:', analysisResult);
+    console.log('Analysis result keys:', Object.keys(analysisResult || {}));
+    
+    // Use only analysis_id from analysisResult
+    const analysisId = analysisResult?.analysis_id;
+    
+    console.log('Found analysis ID:', analysisId);
+    
+    if (!analysisResult || !analysisId) {
+      console.error('No analysis ID available for CSV download');
+      console.log('Available fields in analysisResult:', Object.keys(analysisResult || {}));
+      return;
+    }
+    
+    setCsvDownloadLoading(true);
+    try {
+      console.log('Calling downloadThicknessGridCSV with ID:', analysisId);
+      await backendApi.downloadThicknessGridCSV(analysisId, 1.0);
+      console.log('CSV download triggered (check browser for download or block)');
+    } catch (error) {
+      console.error('CSV download failed or was blocked by the browser:', error);
+    } finally {
+      setCsvDownloadLoading(false);
+    }
+  };
+
+  // Handler for point hover/thickness query
+  const handlePointHover = async (x, y, z, mouseX, mouseY) => {
+    // Use only analysis_id from analysisResult
+    const analysisId = analysisResult?.analysis_id;
+    if (!analysisId) return;
+    setPointQueryLoading(true);
+    setHoverInfo(null);
+    try {
+      const response = await backendApi.pointQuery(analysisId, { x, y, coordinate_system: 'utm' });
+      // Use the first layer for display
+      const layer = response?.thickness_layers?.[0];
+      setHoverInfo({
+        x: response?.query_point?.x,
+        y: response?.query_point?.y,
+        thickness: layer?.thickness_feet,
+        lat: response?.query_point?.lat,
+        lon: response?.query_point?.lon,
+      });
+    } catch (error) {
+      setHoverInfo(null);
+    } finally {
+      setPointQueryLoading(false);
+    }
+  };
+
+  // Handler for mouse leave
+  const handleMouseLeave = () => {
+    setHoverInfo(null);
+    setPointQueryLoading(false);
+  };
+
   const renderContent = () => {
     switch (wizardStep) {
       case 1:
@@ -186,7 +252,12 @@ function App() {
         return (
           <div className="flex flex-col h-screen">
             <div className="flex-grow">
-                <ThreeDViewer analysisResult={analysisResult} onBack={handleReturnToSetup} />
+                <ThreeDViewer 
+                  analysisResult={analysisResult} 
+                  onBack={handleReturnToSetup}
+                  onPointHover={handlePointHover}
+                  onMouseLeave={handleMouseLeave}
+                />
             </div>
             <div className="flex-none h-1/4 bg-white p-4 overflow-auto">
                 <DataTable analysisResult={analysisResult} tonnages={tonnageParams} />
@@ -228,6 +299,59 @@ function App() {
       <main className="p-4">
         {renderContent()}
       </main>
+
+      {/* Static Thickness Info Table - Bottom Center */}
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-50 bg-white rounded-lg shadow-lg px-6 py-3 border border-gray-300" style={{ minWidth: 340 }}>
+        <div className="font-semibold mb-1 text-center">Thickness at Point</div>
+        <table className="w-full text-sm">
+          <tbody>
+            <tr>
+              <td className="pr-2 text-gray-600">X (ft)</td>
+              <td>{pointQueryLoading ? '...' : (hoverInfo?.x?.toFixed(2) ?? '--')}</td>
+              <td className="pr-2 text-gray-600">Y (ft)</td>
+              <td>{pointQueryLoading ? '...' : (hoverInfo?.y?.toFixed(2) ?? '--')}</td>
+            </tr>
+            <tr>
+              <td className="pr-2 text-gray-600">Thickness (ft)</td>
+              <td colSpan={3}>{pointQueryLoading ? '...' : (hoverInfo?.thickness?.toFixed(3) ?? '--')}</td>
+            </tr>
+            <tr>
+              <td className="pr-2 text-gray-600">Latitude (WGS84)</td>
+              <td>{pointQueryLoading ? '...' : (hoverInfo?.lat?.toFixed(6) ?? '--')}</td>
+              <td className="pr-2 text-gray-600">Longitude (WGS84)</td>
+              <td>{pointQueryLoading ? '...' : (hoverInfo?.lon?.toFixed(6) ?? '--')}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {/* CSV Download Button - Fixed position in bottom right */}
+      {analysisResult && (
+        <div className="fixed bottom-4 right-4 z-50">
+          <button
+            onClick={handleDownloadCSV}
+            disabled={csvDownloadLoading}
+            className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg shadow-lg transition-colors duration-200 flex items-center space-x-2"
+          >
+            {csvDownloadLoading ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Downloading...</span>
+              </>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <span>Download Full Thickness CSV</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -190,13 +190,18 @@ class AnalysisExecutor:
         logger.info(f"[{analysis_id}] Updating job status to {final_status}")
 
         # Add georeferencing metadata to the results
-        georef_params = params.get('georef', {})
-        georef = {
-            "lat": georef_params.get('anchor_lat', 0),
-            "lon": georef_params.get('anchor_lon', 0),
-            "orientation": georef_params.get('orientation', 0),
-            "scale": georef_params.get('scale', 1)
-        }
+        # Use georeference_params[0] if present, fallback to defaults
+        georef_params_list = params.get('georeference_params', [])
+        if georef_params_list and isinstance(georef_params_list, list) and len(georef_params_list) > 0:
+            first_georef = georef_params_list[0]
+            georef = {
+                "lat": first_georef.get('wgs84_lat', 0.0),
+                "lon": first_georef.get('wgs84_lon', 0.0),
+                "orientation": first_georef.get('orientation_degrees', 0.0),
+                "scale": first_georef.get('scaling_factor', 1.0)
+            }
+        else:
+            georef = {"lat": 0.0, "lon": 0.0, "orientation": 0.0, "scale": 1.0}
         
         # Store results for visualization - ensure no threading primitives
         self._results_cache[analysis_id] = {

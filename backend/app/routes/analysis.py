@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Request, Query, Body, BackgroundTasks, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from typing import Optional
 from app.services.analysis_executor import AnalysisExecutor
 from app.services import thickness_calculator
-from app.services.coord_transformer import CoordinateTransformer
+from app.services.coord_transformer import CoordinateTransformer, TransformationPipeline
 import numpy as np
 from app.services.statistical_analysis import StatisticalAnalyzer
 from app.models.data_models import StatisticalAnalysis, ProcessingRequest
@@ -14,6 +14,9 @@ import os
 from datetime import datetime
 import logging
 import traceback
+import io
+import csv
+from app.services import triangulation
 
 router = APIRouter(tags=["analysis"])
 executor = AnalysisExecutor()
@@ -122,7 +125,8 @@ async def get_analysis_results(analysis_id: str, include: Optional[str] = Query(
                 logger.info(f"  - Volume Results: {volume_summary}")
                 logger.info(f"  - Thickness Results: {thickness_summary}")
                 logger.info("-------------------------------------------------")
-                return results
+                # Add analysis_id at the top level
+                return {"analysis_id": analysis_id, **results}
             else:
                 # This case might happen in a race condition.
                 # The job is complete, but results are not yet in the cache.
@@ -185,18 +189,31 @@ async def point_query(
     if not surface_tins or not surface_names:
         raise HTTPException(status_code=500, detail="Surface TINs not available")
 
+    # Get georeference metadata
+    georef = results.get("georef")
+    if not georef:
+        raise HTTPException(status_code=500, detail="Georeference metadata missing from analysis results")
+    if georef["lat"] == 0.0 and georef["lon"] == 0.0:
+        print("[WARNING] Anchor point is (0.0, 0.0). This may indicate a misconfiguration or missing georeference data.")
+    pipeline = TransformationPipeline(
+        anchor_lat=georef["lat"],
+        anchor_lon=georef["lon"],
+        rotation_degrees=georef["orientation"],
+        scale_factor=georef["scale"]
+    )
+    utm_to_wgs84 = pipeline.utm_to_wgs84_transformer
+    # Debug logging for anchor and UTM zone
+    print(f"[DEBUG] Anchor lat: {georef['lat']}, lon: {georef['lon']}, UTM zone: {pipeline.utm_zone}, anchor_utm_x: {pipeline.anchor_utm_x}, anchor_utm_y: {pipeline.anchor_utm_y}")
+
     # Transform coordinates if needed (assume UTM is default system)
     point = np.array([x, y])
     if coordinate_system == "wgs84":
-        # Use metadata to get transformation (mocked here)
-        # In production, use actual transformation logic
-        transformer = CoordinateTransformer(
-            anchor_lat=results["georef"]["lat"],
-            anchor_lon=results["georef"]["lon"],
-            rotation_degrees=results["georef"]["orientation"],
-            scale_factor=results["georef"]["scale"]
-        )
-        point = transformer.transform_to_utm(np.array([[x, y]]))[0]
+        point = pipeline.transform_to_utm(np.array([[x, y, 0.0]]))[0][:2]
+
+    # Compute lat/lon for the query point
+    print(f"[DEBUG] UTM input: x={point[0]}, y={point[1]}")
+    lon, lat = utm_to_wgs84.transform(point[0], point[1])
+    print(f"[DEBUG] WGS84 output: lon={lon}, lat={lat}")
 
     # For each layer, calculate thickness at this point
     thickness_layers = []
@@ -217,7 +234,13 @@ async def point_query(
 
     return {
         "thickness_layers": thickness_layers,
-        "query_point": {"x": float(point[0]), "y": float(point[1]), "coordinate_system": "utm"},
+        "query_point": {
+            "x": float(point[0]),
+            "y": float(point[1]),
+            "lat": lat,
+            "lon": lon,
+            "coordinate_system": "utm"
+        },
         "interpolation_method": "linear"
     }
 
@@ -578,4 +601,86 @@ async def export_data(payload: dict = Body(...)):
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Export failed: {str(e)}") 
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Export failed: {str(e)}")
+
+@router.get("/{analysis_id}/thickness_grid_csv")
+async def thickness_grid_csv(
+    analysis_id: str,
+    spacing: float = Query(1.0, description="Grid spacing in feet (default 1.0)")
+):
+    """Stream a CSV of thickness at each grid point for all layers."""
+    # Retrieve analysis results
+    results = executor.get_results(analysis_id)
+    if results is None:
+        raise HTTPException(status_code=404, detail="Analysis not found or not completed")
+    if results.get("analysis_metadata", {}).get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Analysis not completed")
+
+    surfaces = results.get("surfaces")
+    if not surfaces or len(surfaces) < 2:
+        raise HTTPException(status_code=400, detail="At least two surfaces required for thickness grid export")
+
+    # Convert vertices back to numpy arrays
+    surface_points = [np.array(s["vertices"]) for s in surfaces]
+    layer_names = [f"{surfaces[i]['name']} to {surfaces[i+1]['name']}" for i in range(len(surfaces)-1)]
+
+    # Compute bounding box for all surfaces
+    all_xy = np.vstack([pts[:, :2] for pts in surface_points])
+    x_min, y_min = np.min(all_xy, axis=0)
+    x_max, y_max = np.max(all_xy, axis=0)
+
+    # Generate grid points
+    x_coords = np.arange(x_min, x_max + spacing, spacing)
+    y_coords = np.arange(y_min, y_max + spacing, spacing)
+    grid_points = np.array([[x, y] for x in x_coords for y in y_coords])
+
+    # Build TINs for each surface
+    tins = []
+    for pts in surface_points:
+        tin = triangulation.create_delaunay_triangulation(pts[:, :2])
+        setattr(tin, 'z_values', pts[:, 2])
+        tins.append(tin)
+
+    # Prepare transformation pipeline for UTM->WGS84
+    georef = results.get("georef")
+    if not georef:
+        raise HTTPException(status_code=500, detail="Georeference metadata missing from analysis results")
+    pipeline = TransformationPipeline(
+        anchor_lat=georef["lat"],
+        anchor_lon=georef["lon"],
+        rotation_degrees=georef["orientation"],
+        scale_factor=georef["scale"]
+    )
+    utm_to_wgs84 = pipeline.utm_to_wgs84_transformer
+
+    # Prepare CSV streaming
+    def csv_generator():
+        output = io.StringIO()
+        writer = csv.writer(output)
+        # Write header with lat/lon
+        writer.writerow(["x", "y", "lat", "lon"] + layer_names)
+        yield output.getvalue()
+        output.seek(0)
+        output.truncate(0)
+        for pt in grid_points:
+            # Compute lat/lon from UTM (x, y)
+            print(f"[DEBUG] CSV UTM input: x={pt[0]}, y={pt[1]}")
+            lon, lat = utm_to_wgs84.transform(pt[0], pt[1])
+            print(f"[DEBUG] CSV WGS84 output: lon={lon}, lat={lat}")
+            row = [pt[0], pt[1], lat, lon]
+            for i in range(len(tins)-1):
+                upper_z = thickness_calculator._interpolate_z_at_point(pt, tins[i+1])
+                lower_z = thickness_calculator._interpolate_z_at_point(pt, tins[i])
+                if not np.isnan(upper_z) and not np.isnan(lower_z):
+                    thickness = upper_z - lower_z
+                else:
+                    thickness = ''
+                row.append(thickness)
+            writer.writerow(row)
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+    return StreamingResponse(csv_generator(), media_type="text/csv", headers={
+        "Content-Disposition": f"attachment; filename=thickness_grid_{analysis_id}.csv"
+    }) 

@@ -9,6 +9,8 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 const ThreeDViewer = ({ 
   analysisResult,
   onPointHover, 
+  onMouseLeave,
+  onBack,
   selectedSurfaces
 }) => {
   const surfaces = analysisResult?.surfaces || [];
@@ -22,7 +24,8 @@ const ThreeDViewer = ({
   };
 
   const callbacks = {
-    onPointHover: onPointHover || (() => {})
+    onPointHover: onPointHover || (() => {}),
+    onMouseLeave: onMouseLeave || (() => {})
   };
 
   const mountRef = useRef(null);
@@ -240,34 +243,80 @@ const ThreeDViewer = ({
   useEffect(() => {
     if (!isInitialized || !mountRef.current) return;
 
-    const handleMouseMove = (event) => {
-      const rect = mountRef.current.getBoundingClientRect();
-      mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-      // Raycasting for point analysis
-      if (cameraRef.current) {
-        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-      } else {
-        return; // Camera not ready
-      }
-
-      const intersects = raycasterRef.current.intersectObjects(
-        sceneRef.current.children.filter(child => child.type === 'Mesh')
-      );
-
-      if (intersects.length > 0) {
-        const point = intersects[0].point;
-        handlePointSelect(point);
-      }
-    };
-
+    console.log('ThreeDViewer: useEffect for mouse events running. isInitialized:', isInitialized, 'mountRef:', !!mountRef.current);
     const canvas = mountRef.current.querySelector('canvas');
     if (canvas) {
+      console.log('ThreeDViewer: Canvas found, attaching mousemove and mouseleave listeners');
       canvas.addEventListener('mousemove', handleMouseMove);
-      return () => canvas.removeEventListener('mousemove', handleMouseMove);
+      canvas.addEventListener('mouseleave', handleMouseLeave);
+      return () => {
+        canvas.removeEventListener('mousemove', handleMouseMove);
+        canvas.removeEventListener('mouseleave', handleMouseLeave);
+      };
+    } else {
+      console.log('ThreeDViewer: Canvas NOT found, cannot attach listeners');
     }
-  }, [isInitialized, handlePointSelect]);
+  }, [isInitialized, handlePointSelect, callbacks]);
+
+  // Log when isInitialized is set to true
+  useEffect(() => {
+    if (isInitialized) {
+      console.log('ThreeDViewer: isInitialized set to true');
+    }
+  }, [isInitialized]);
+
+  // Helper to recursively collect all meshes in the scene
+  function getAllMeshes(object) {
+    let meshes = [];
+    if (object.type === 'Mesh') {
+      meshes.push(object);
+    }
+    if (object.children && object.children.length > 0) {
+      object.children.forEach(child => {
+        meshes = meshes.concat(getAllMeshes(child));
+      });
+    }
+    return meshes;
+  }
+
+  const handleMouseMove = (event) => {
+    console.log('ThreeDViewer: handleMouseMove event fired');
+    const rect = mountRef.current.getBoundingClientRect();
+    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    // Raycasting for point analysis
+    if (cameraRef.current) {
+      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+    } else {
+      return; // Camera not ready
+    }
+
+    // Use helper to get all meshes in the scene
+    const meshes = getAllMeshes(sceneRef.current);
+    const intersects = raycasterRef.current.intersectObjects(meshes);
+
+    if (intersects.length > 0) {
+      const point = intersects[0].point;
+      // Debug log for intersection
+      console.log('Raycast intersection found:', point.x, point.y, point.z, event.clientX - rect.left, event.clientY - rect.top);
+      // Provide both 3D and 2D mouse position (relative to container)
+      if (callbacks.onPointHover) {
+        console.log('Calling onPointHover callback');
+        callbacks.onPointHover(point.x, point.y, point.z, event.clientX - rect.left, event.clientY - rect.top);
+      } else {
+        console.log('onPointHover callback not available');
+      }
+    } else {
+      console.log('No raycast intersection found');
+    }
+  };
+
+  const handleMouseLeave = () => {
+    if (typeof callbacks.onMouseLeave === 'function') {
+      callbacks.onMouseLeave();
+    }
+  };
 
   return (
     <div className="h-full w-full relative">

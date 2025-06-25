@@ -272,9 +272,18 @@ class SurfaceProcessor:
             })
         logger.info("---------------------------------")
 
-        # Extract georeference parameters from the first surface if available
-        georef_params = params.get('georeference_params', [{}])
-        first_georef = georef_params[0] if georef_params else {}
+        # Extract georeference parameters from the first entry in georeference_params if available
+        georef_params_list = params.get('georeference_params', [])
+        if georef_params_list and isinstance(georef_params_list, list) and len(georef_params_list) > 0:
+            first_georef = georef_params_list[0]
+            georef = {
+                "lat": first_georef.get('wgs84_lat', 0.0),
+                "lon": first_georef.get('wgs84_lon', 0.0),
+                "orientation": first_georef.get('orientation_degrees', 0.0),
+                "scale": first_georef.get('scaling_factor', 1.0)
+            }
+        else:
+            georef = {"lat": 0.0, "lon": 0.0, "orientation": 0.0, "scale": 1.0}
 
         # Convert numpy arrays to lists for JSON serialization
         for surface in processed_surfaces:
@@ -292,12 +301,7 @@ class SurfaceProcessor:
             "compaction_results": compaction_results,
             "surface_tins": [{s.get('name'): s.get('faces')} for s in processed_surfaces],
             "surface_names": [surface.get('name', f'Surface {i}') for i, surface in enumerate(processed_surfaces)],
-            "georef": {
-                "lat": first_georef.get('anchor_lat', 0.0),
-                "lon": first_georef.get('anchor_lon', 0.0),
-                "orientation": first_georef.get('rotation_degrees', 0.0),
-                "scale": first_georef.get('scale_factor', 1.0)
-            }
+            "georef": georef
         }
         
         # Apply comprehensive serialization to ensure everything is JSON serializable
