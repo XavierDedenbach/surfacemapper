@@ -4104,3 +4104,119 @@ def test_downstream_compatibility():
         os.unlink(binary_file)
 ```
 **Acceptance Criteria**: All backward compatibility tests pass, ensuring binary PLY parser produces identical output format to ASCII parser
+
+
+### Major Task 10.0: SHP File Support and WGS84 Surface Analysis
+
+#### Subtask 10.1: SHP File Parsing and Clipping
+
+##### Minor Task 10.1.1 (Test First): Write SHP Parsing, Densification, and Clipping Unit Tests
+**Task**: Create tests for parsing SHP files, densifying LineString contours to a polygon boundary, and clipping with WGS84 boundaries
+**What to do**: Create `backend/tests/test_shp_parser.py` with tests for:
+- SHP file parsing (points, polygons, multipoints, linestrings)
+- **Densification of LineString contours to a polygon boundary** (with max spacing, e.g., 1 foot)
+- WGS84 boundary clipping (using shapely)
+- CRS validation (ensure WGS84 degrees)
+**Implementation Level**:
+- Use fiona and shapely for parsing, densification, and clipping
+- Use pyproj for CRS validation
+**Code Estimate**: ~120 lines of test code
+**How to Test**:
+```python
+def test_shp_densification_and_polygon_boundary():
+    # Load test SHP file with LineStrings
+    # Densify contours to max 1-foot spacing
+    # Generate polygon boundary from densified points
+    # Assert polygon is valid and area is reasonable
+```
+**Acceptance Criteria**: SHP parsing, densification, polygon boundary creation, clipping, and CRS validation work as expected
+
+##### Minor Task 10.1.2 (Implementation): Implement SHP File Parsing, Densification, and Polygon Boundary Creation
+**Task**: Implement SHP file parsing, densification of LineString contours, polygon boundary creation, WGS84 clipping, and CRS validation
+**What to do**: Create/extend `backend/app/utils/shp_parser.py` to:
+- Parse SHP with fiona
+- Densify all LineString contours to max 1-foot spacing
+- Generate a polygon boundary from all densified points (convex hull or more advanced if needed)
+- Clip with shapely
+- Validate CRS is WGS84 degrees
+- Output numpy arrays in WGS84
+**Implementation Level**:
+- Densification and polygon boundary creation is always performed for SHP files
+- Output is ready for downstream analysis
+**Code Estimate**: ~150 lines
+**How to Test**: Use tests from 10.1.1 - all parsing, densification, and boundary tests must pass
+**Acceptance Criteria**: SHP files are parsed, densified, converted to polygon boundaries, clipped, and validated for analysis
+
+#### Subtask 10.2: SHP to UTM Projection and Surface Preparation
+
+##### Minor Task 10.2.1 (Test First): Write Projection and Preparation Tests
+**Task**: Create tests for projecting SHP geometries from WGS84 to UTM and preparing for analysis
+**What to do**: Add to `backend/tests/test_shp_parser.py`:
+- Test projection to UTM (pyproj)
+- Test output format matches PLY parser (np.ndarray)
+- Test error handling for invalid CRS
+**Implementation Level**:
+- Use pyproj for projection
+- Validate output shape and dtype
+**Code Estimate**: ~80 lines of test code
+**How to Test**:
+```python
+def test_shp_projection_to_utm():
+    # Project SHP points/polygons to UTM
+    # Assert output is np.ndarray in meters
+```
+**Acceptance Criteria**: Projection and output format match requirements
+
+##### Minor Task 10.2.2 (Implementation): Implement SHP to UTM Projection and Preparation
+**Task**: Implement projection and output formatting for SHP surfaces
+**What to do**: Extend `shp_parser.py` to project to UTM and output np.ndarray
+**Implementation Level**:
+- Project clipped geometries to UTM (meters)
+- Output np.ndarray matching PLY parser
+**Code Estimate**: ~100 lines
+**How to Test**: Use tests from 10.2.1 - all projection and output tests must pass
+**Acceptance Criteria**: SHP surfaces are ready for analysis pipeline
+
+#### Subtask 10.3: SHP Integration with Surface Analysis Pipeline
+
+##### Minor Task 10.3.1 (Test First): Write Integration Tests for SHP and PLY Workflow
+**Task**: Create integration tests for uploading, parsing, and analyzing SHP and PLY files together
+**What to do**: Create `backend/tests/test_shp_integration.py`:
+- Upload both SHP and PLY files
+- Run analysis pipeline
+- Validate results and error handling
+**Implementation Level**:
+- Use FastAPI TestClient for end-to-end tests
+- Validate output structure and correctness
+**Code Estimate**: ~120 lines of test code
+**How to Test**:
+```python
+def test_shp_and_ply_integration():
+    # Upload SHP and PLY
+    # Run analysis
+    # Assert results are correct and compatible
+```
+**Acceptance Criteria**: SHP and PLY files are supported in parallel workflows
+
+##### Minor Task 10.3.2 (Implementation): Integrate SHP Workflow with Analysis Pipeline
+**Task**: Integrate SHP support into the main analysis workflow
+**What to do**: Update backend to accept SHP files, branch workflow, and ensure all surfaces are in UTM (meters) before analysis
+**Implementation Level**:
+- Detect file type on upload
+- Use SHP parser for .shp, PLY parser for .ply
+- Ensure all downstream code works with UTM (meters)
+**Code Estimate**: ~80 lines
+**How to Test**: Use tests from 10.3.1 - all integration tests must pass
+**Acceptance Criteria**: Both file types are supported and produce correct results
+
+#### Subtask 10.4: Documentation and API Update
+
+##### Minor Task 10.4.1: Update Documentation and API
+**Task**: Document SHP file support and update API docs
+**What to do**: Update README and API documentation to describe SHP workflow and requirements
+**Implementation Level**:
+- Add SHP support section to docs
+- Update API endpoint docs
+**Code Estimate**: ~30 lines
+**How to Test**: Docs are clear, users can upload and analyze SHP files
+**Acceptance Criteria**: Documentation is up to date and accurate

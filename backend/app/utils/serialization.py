@@ -130,7 +130,7 @@ def safe_json_serialize(data: Any) -> str:
         
     except Exception as e:
         logger.error(f"JSON serialization failed: {e}")
-        return json.dumps({"error": f"Serialization error: {str(e)}"})
+        return json.dumps({"error": f"Serialization error: {str(e)}"}) 
 
 def clean_floats_for_json(data):
     """Recursively replace NaN, inf, -inf with None for JSON compliance."""

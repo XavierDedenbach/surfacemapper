@@ -1,3 +1,15 @@
+# SYSTEM REQUIREMENTS (must be installed before pip install):
+#   sudo apt-get update
+#   sudo apt-get install -y gdal-bin libgdal-dev python3-gdal
+#
+# If using conda, prefer: conda install -c conda-forge gdal fiona pyproj shapely
+#
+# CONDA ENVIRONMENT FIXES:
+#   conda install -c conda-forge libstdcxx-ng  # Fixes GLIBCXX_3.4.30 missing library
+#
+# The following line ensures pip builds Fiona and pyproj from source (links to system GDAL):
+--no-binary=fiona,pyproj
+
 # Core FastAPI dependencies
 fastapi==0.104.1
 starlette==0.27.0
@@ -15,9 +27,14 @@ scikit-learn>=1.3.0
 pandas>=2.1.0
 openpyxl>=3.1.0
 
+# Geospatial processing (SHP file support)
+fiona==1.10.1
+shapely==2.1.1
+geopandas>=1.1.0
+
 # 3D processing
 trimesh>=3.20.0
-pyproj>=3.6.1
+pyproj==3.7.1
 pyvista==0.43.1
 plyfile==0.7.4
 
