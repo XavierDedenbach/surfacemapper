@@ -7,6 +7,7 @@ from app.utils.serialization import make_json_serializable, validate_json_serial
 from app.services.surface_processor import SurfaceProcessor
 from app.services.surface_cache import surface_cache
 from app.utils.ply_parser import PLYParser
+from app.utils.shp_parser import SHPParser
 from app.services.coord_transformer import CoordinateTransformer, TransformationPipeline
 import os
 import numpy as np
@@ -32,6 +33,8 @@ class AnalysisExecutor:
         self.MAX_CONCURRENT_JOBS = 10
         self.surface_processor = SurfaceProcessor()
         self.coord_transformer = CoordinateTransformer()
+        self.ply_parser = PLYParser()
+        self.shp_parser = SHPParser()
         
         # Performance optimization: Pre-allocate memory pools
         self._chunk_size = 10000  # Process data in chunks for better memory management
@@ -90,7 +93,6 @@ class AnalysisExecutor:
         
         # Load surface data from cache with progress updates
         surfaces_to_process = []
-        parser = PLYParser()
         
         for i, sid in enumerate(surface_ids):
             logger.info(f"[{analysis_id}] Loading surface {i+1}/{len(surface_ids)}: {sid}")
@@ -100,10 +102,17 @@ class AnalysisExecutor:
                 raise RuntimeError(f"Surface {sid} not found in cache or is invalid.")
             
             file_path = cached_surface['file_path']
-            logger.info(f"[{analysis_id}] Parsing PLY file: {file_path}")
+            file_type = cached_surface.get('file_type', 'PLY')  # Default to PLY for backward compatibility
+            logger.info(f"[{analysis_id}] Parsing {file_type} file: {file_path}")
             
-            vertices, faces = parser.parse_ply_file(file_path)
-            logger.info(f"[{analysis_id}] Loaded {len(vertices)} vertices, {len(faces) if faces is not None else 0} faces")
+            # Parse file based on type
+            if file_type.upper() == 'SHP':
+                vertices, faces = self.shp_parser.process_shp_file(file_path)
+                logger.info(f"[{analysis_id}] Loaded {len(vertices)} vertices from SHP file")
+            else:
+                # Default to PLY parsing
+                vertices, faces = self.ply_parser.parse_ply_file(file_path)
+                logger.info(f"[{analysis_id}] Loaded {len(vertices)} vertices, {len(faces) if faces is not None else 0} faces from PLY file")
 
             # --- Apply Transformation Pipeline ---
             georef_params_list = params.get('georeference_params', [])
@@ -135,7 +144,8 @@ class AnalysisExecutor:
                 "id": sid,
                 "name": cached_surface.get("filename", "Unknown"),
                 "vertices": transformed_vertices,
-                "faces": faces
+                "faces": faces,
+                "file_type": file_type
             })
             
             # Update progress

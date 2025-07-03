@@ -1,20 +1,21 @@
 """
-File validation utilities for PLY upload
+File validation utilities for PLY and SHP upload
 """
 import os
 from typing import BinaryIO
 
 MAX_PLY_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
+MAX_SHP_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
 
 def validate_file_extension(filename: str) -> bool:
-    """Validate file extension is .ply"""
-    return filename.lower().endswith('.ply') and filename.strip() != '.ply'
+    """Validate file extension is .ply or .shp"""
+    return (filename.lower().endswith('.ply') or filename.lower().endswith('.shp')) and filename.strip() not in ['.ply', '.shp']
 
 
 def validate_file_size(size_bytes: int) -> bool:
     """Validate file size is within limits (2GB max) and not empty"""
-    return 0 < size_bytes <= MAX_PLY_SIZE
+    return 0 < size_bytes <= max(MAX_PLY_SIZE, MAX_SHP_SIZE)
 
 
 def validate_ply_format(file_or_bytes):
@@ -51,6 +52,62 @@ def validate_ply_format(file_or_bytes):
             return True
         return False
     except Exception:
+        return False
+
+
+def validate_shp_format(file_or_bytes):
+    """Validate that the file or bytes is a valid SHP file by checking header structure."""
+    try:
+        if hasattr(file_or_bytes, 'read'):
+            # file-like
+            file_or_bytes.seek(0)
+            header = file_or_bytes.read(100)  # Read first 100 bytes for SHP header
+            file_or_bytes.seek(0)
+        elif isinstance(file_or_bytes, (bytes, bytearray)):
+            header = file_or_bytes[:100]
+        else:
+            return False
+        
+        # SHP file header validation
+        # SHP files start with a file header that contains metadata
+        if len(header) < 100:
+            return False
+        
+        # Check for valid SHP file signature and structure
+        # This is a basic validation - more comprehensive validation would use fiona
+        try:
+            import fiona
+            if hasattr(file_or_bytes, 'read'):
+                file_or_bytes.seek(0)
+                with fiona.open(file_or_bytes, 'r') as src:
+                    # If we can open it with fiona, it's likely a valid SHP file
+                    return True
+            else:
+                # For bytes, we'd need to write to temp file first
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix='.shp', delete=False) as tmp:
+                    tmp.write(file_or_bytes)
+                    tmp.flush()
+                    try:
+                        with fiona.open(tmp.name, 'r') as src:
+                            return True
+                    finally:
+                        os.unlink(tmp.name)
+        except Exception:
+            # If fiona can't open it, it's not a valid SHP file
+            return False
+        
+    except Exception:
+        return False
+
+
+def validate_file_format(filename: str, file_or_bytes):
+    """Validate file format based on extension"""
+    if filename.lower().endswith('.ply'):
+        return validate_ply_format(file_or_bytes)
+    elif filename.lower().endswith('.shp'):
+        return validate_shp_format(file_or_bytes)
+    else:
         return False
 
 

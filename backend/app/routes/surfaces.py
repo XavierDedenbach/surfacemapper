@@ -7,8 +7,9 @@ from app.models.data_models import (
     SurfaceUploadResponse, ProcessingRequest, ProcessingResponse,
     AnalysisResults, VolumeResult, ThicknessResult, CompactionResult, ProcessingStatus
 )
-from app.utils.file_validator import validate_file_extension, validate_file_size, validate_ply_format
+from app.utils.file_validator import validate_file_extension, validate_file_size, validate_file_format
 from app.utils.ply_parser import PLYParser
+from app.utils.shp_parser import SHPParser
 from app.services.surface_cache import surface_cache
 
 logger = logging.getLogger(__name__)
@@ -20,15 +21,17 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 @router.post("/upload", response_model=SurfaceUploadResponse)
 async def upload_surface(file: UploadFile = File(...)):
     """
-    Upload a .ply surface file for processing
+    Upload a .ply or .shp surface file for processing
     """
     logger.info(f"Uploading surface file: {file.filename}")
 
     if not validate_file_extension(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type: only .ply files are supported.")
+        raise HTTPException(status_code=400, detail="Invalid file type: only .ply and .shp files are supported.")
 
+    # Determine file type and extension
+    file_extension = os.path.splitext(file.filename.lower())[1]
     file_id = str(uuid.uuid4())
-    temp_path = os.path.join(UPLOAD_DIR, f"{file_id}.ply")
+    temp_path = os.path.join(UPLOAD_DIR, f"{file_id}{file_extension}")
     
     size_bytes = 0
     try:
@@ -49,32 +52,33 @@ async def upload_surface(file: UploadFile = File(...)):
 
     try:
         with open(temp_path, "rb") as f:
-            if not validate_ply_format(f):
+            if not validate_file_format(file.filename, f):
                 # Safe file removal
                 try:
                     os.remove(temp_path)
                 except FileNotFoundError:
                     pass  # File already removed or doesn't exist
-                raise HTTPException(status_code=400, detail="Invalid PLY file format.")
+                raise HTTPException(status_code=400, detail=f"Invalid {file_extension} file format.")
     except Exception as e:
-        logger.error(f"Failed to validate PLY file: {e}")
+        logger.error(f"Failed to validate {file_extension} file: {e}")
         # Safe file removal
         try:
             os.remove(temp_path)
         except FileNotFoundError:
             pass  # File already removed or doesn't exist
-        raise HTTPException(status_code=400, detail="Invalid or corrupted PLY file.")
+        raise HTTPException(status_code=400, detail=f"Invalid or corrupted {file_extension} file.")
 
     # Generate a unique ID and cache the surface metadata and file path
     surface_id = str(uuid.uuid4())
     surface_cache.set(surface_id, {
         "file_path": temp_path,
         "filename": file.filename,
-        "size_bytes": size_bytes
+        "size_bytes": size_bytes,
+        "file_type": file_extension[1:].upper()  # Store file type (PLY or SHP)
     })
 
     return SurfaceUploadResponse(
-        message="Surface uploaded successfully and is ready for analysis.",
+        message=f"Surface uploaded successfully and is ready for analysis.",
         filename=file.filename,
         surface_id=surface_id,
         status=ProcessingStatus.PENDING,

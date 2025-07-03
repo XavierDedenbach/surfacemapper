@@ -264,12 +264,12 @@ class SHPParser:
             
             # Convert polygon to vertices
             coords = list(boundary_polygon.exterior.coords)
-            vertices = np.array(coords, dtype=np.float64)
+            vertices = np.array(coords, dtype=np.float32)
             
             # Add z-coordinate if not present
             if vertices.shape[1] == 2:
                 # Add z=0 for all points
-                z_coords = np.zeros((vertices.shape[0], 1))
+                z_coords = np.zeros((vertices.shape[0], 1), dtype=np.float32)
                 vertices = np.hstack([vertices, z_coords])
             
             logger.info(f"Created boundary polygon with {len(vertices)} vertices")
@@ -287,10 +287,10 @@ class SHPParser:
                     all_vertices.extend(coords)
             
             if all_vertices:
-                vertices = np.array(all_vertices, dtype=np.float64)
+                vertices = np.array(all_vertices, dtype=np.float32)
                 # Add z-coordinate if not present
                 if vertices.shape[1] == 2:
-                    z_coords = np.zeros((vertices.shape[0], 1))
+                    z_coords = np.zeros((vertices.shape[0], 1), dtype=np.float32)
                     vertices = np.hstack([vertices, z_coords])
                 return vertices, None
         
@@ -456,7 +456,7 @@ class SHPParser:
             except Exception as e:
                 raise ValueError(f"Failed to project coordinate ({lon}, {lat}, {z}): {e}")
         
-        return np.array(utm_coords, dtype=np.float64)
+        return np.array(utm_coords, dtype=np.float32)
 
     def _project_to_wgs84(self, utm_coords: np.ndarray, utm_zone: int = None) -> np.ndarray:
         """
@@ -513,7 +513,7 @@ class SHPParser:
             except Exception as e:
                 raise ValueError(f"Failed to project coordinate ({x}, {y}, {z}): {e}")
         
-        return np.array(wgs84_coords, dtype=np.float64)
+        return np.array(wgs84_coords, dtype=np.float32)
 
     def _validate_utm_coordinates(self, utm_coords: np.ndarray) -> bool:
         """

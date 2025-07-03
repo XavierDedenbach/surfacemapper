@@ -60,10 +60,10 @@ class CoordinateSystem(BaseModel):
     def validate_bounds(cls, v):
         if 'min_lat' in v and 'max_lat' in v:
             if v['min_lat'] >= v['max_lat']:
-            raise ValueError("min_lat must be less than max_lat")
+                raise ValueError("min_lat must be less than max_lat")
         if 'min_lon' in v and 'max_lon' in v:
             if v['min_lon'] >= v['max_lon']:
-            raise ValueError("min_lon must be less than max_lon")
+                raise ValueError("min_lon must be less than max_lon")
         return v
 
 class ProcessingParameters(BaseModel):
@@ -112,7 +112,7 @@ class SurfaceConfiguration(BaseModel):
         if 'format' in v:
             valid_formats = ['ply', 'csv', 'json', 'excel', 'geojson']
             if v['format'] not in valid_formats:
-            raise ValueError(f"Export format must be one of {valid_formats}")
+                raise ValueError(f"Export format must be one of {valid_formats}")
         return v
 
 class QualityMetrics(BaseModel):

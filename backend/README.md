@@ -49,18 +49,36 @@
    docker run -p 3000:80 surfacemapper-frontend
    ```
 
-### 4. Uploading Your First `.ply` File
+### 4. Uploading Your First Surface File
+
+The backend supports both PLY and SHP file formats:
+
+#### PLY Files
+- 3D point clouds and mesh data
+- ASCII or binary format
+- Any coordinate system
+
+#### SHP Files
+- ESRI Shapefile format (.shp, .shx, .dbf, .prj)
+- WGS84 coordinate system (EPSG:4326)
+- LineString geometries representing contour lines
+- Automatic densification and polygon boundary creation
 
 #### A. Using the API (cURL)
 ```bash
+# Upload PLY file
 curl -X POST "http://localhost:8081/api/v1/surfaces/upload" \
   -F "file=@/path/to/your/surface.ply"
+
+# Upload SHP file
+curl -X POST "http://localhost:8081/api/v1/surfaces/upload" \
+  -F "file=@/path/to/your/contours.shp"
 ```
 - You should get a JSON response confirming upload.
 
 #### B. Using the Web UI
 1. Open [http://localhost:3000](http://localhost:3000)
-2. Use the upload form to select and submit your `.ply` file.
+2. Use the upload form to select and submit your surface file (PLY or SHP).
 
 ### 5. Processing the Surface
 - After upload, use the API or UI to trigger processing.
@@ -122,7 +140,8 @@ backend/
 
 ## Features
 
-- **PLY File Processing**: Parse and validate .ply surface files
+- **Multi-format File Processing**: Parse and validate PLY files (3D point clouds/meshes) and SHP files (2D contour lines)
+- **SHP File Processing**: Automatic densification, polygon boundary creation, and WGS84 to UTM projection
 - **Coordinate Transformation**: Transform local coordinates to geo-referenced systems using pyproj
 - **Volume Calculation**: Calculate volume differences between surfaces using PyVista (Note: PyVista provides native 3D Delaunay triangulation and advanced mesh operations via VTK backend)
 - **Thickness Analysis**: Compute layer thickness statistics
@@ -135,6 +154,8 @@ Key dependencies include:
 - `fastapi`: Web framework
 - `uvicorn`: ASGI server
 - `plyfile`: PLY file parsing
+- `fiona`: SHP file parsing
+- `shapely`: Geometric operations for SHP processing
 - `pyvista`: 3D geometry processing (replaces Trimesh/Open3D; provides advanced capabilities via VTK backend)
 - `numpy`: Numerical computations
 - `pyproj`: Coordinate transformations
@@ -164,7 +185,7 @@ Key dependencies include:
 - `GET /health` - Service health status
 
 ### Surface Operations
-- `POST /surfaces/upload` - Upload .ply surface file
+- `POST /surfaces/upload` - Upload PLY or SHP surface file
 - `POST /surfaces/process` - Process surfaces for analysis
 - `GET /surfaces/status/{job_id}` - Get processing status
 

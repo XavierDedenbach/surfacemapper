@@ -58,7 +58,17 @@ Check the health status of the API.
 
 #### POST /surfaces/upload
 
-Upload a surface file (PLY format).
+Upload a surface file (PLY or SHP format).
+
+**Supported File Formats:**
+- **PLY files**: ASCII or binary PLY format with vertex coordinates (x, y, z)
+- **SHP files**: ESRI Shapefile format with LineString contours in WGS84 coordinate system
+
+**SHP File Requirements:**
+- Must be in WGS84 coordinate system (EPSG:4326)
+- Should contain LineString geometries for contour lines
+- Will be automatically densified to 1-foot spacing and converted to polygon boundary
+- Output will be projected to UTM coordinates for analysis
 
 **Request:**
 - Content-Type: `multipart/form-data`
@@ -77,7 +87,7 @@ Upload a surface file (PLY format).
 
 #### POST /surfaces/validate
 
-Validate a PLY file before processing.
+Validate a PLY or SHP file before processing.
 
 **Request:**
 - Content-Type: `multipart/form-data`
@@ -330,6 +340,59 @@ Retry a failed processing job.
   "message": "Job restarted successfully"
 }
 ```
+
+### SHP File Processing Workflow
+
+The API supports processing ESRI Shapefile (.shp) format files containing LineString contours for surface analysis. SHP files are automatically processed to create compatible surface data for volume and thickness calculations.
+
+#### SHP File Processing Steps
+
+1. **File Validation**: SHP files are validated for:
+   - WGS84 coordinate system (EPSG:4326)
+   - Valid LineString geometries
+   - Proper file structure and CRS definition
+
+2. **Contour Densification**: LineString contours are densified to ensure points are no more than 1 foot apart for accurate analysis.
+
+3. **Polygon Boundary Creation**: Densified contours are converted to a polygon boundary using:
+   - Line merging and boundary extraction
+   - Convex hull fallback for complex geometries
+   - Area validation to ensure reasonable boundary size
+
+4. **Coordinate Projection**: The polygon boundary is projected from WGS84 to UTM coordinates for analysis:
+   - Automatic UTM zone detection based on coordinates
+   - Projection to UTM meters for accurate distance calculations
+   - Output format compatible with PLY file processing
+
+#### SHP File Requirements
+
+**Format Requirements:**
+- ESRI Shapefile format (.shp, .shx, .dbf, .prj files)
+- WGS84 coordinate system (EPSG:4326)
+- LineString geometries representing contour lines
+
+**Content Requirements:**
+- Contour lines should represent elevation boundaries
+- Lines should be properly closed or form continuous boundaries
+- Coordinate precision should be sufficient for analysis (typically 6+ decimal places)
+
+**Processing Output:**
+- Vertices in UTM coordinates (meters)
+- Polygon boundary ready for volume calculation
+- Compatible with all downstream analysis operations
+
+#### SHP vs PLY File Processing
+
+| Feature | PLY Files | SHP Files |
+|---------|-----------|-----------|
+| Input Format | 3D point cloud/mesh | 2D contour lines |
+| Coordinate System | Any (specified in file) | WGS84 (EPSG:4326) |
+| Processing | Direct vertex extraction | Densification + boundary creation |
+| Output Format | UTM coordinates | UTM coordinates |
+| Analysis Compatibility | Full | Full |
+| File Size | Typically larger | Typically smaller |
+
+Both file types produce identical output formats and are fully compatible with all analysis operations.
 
 ### Coordinate Systems
 
