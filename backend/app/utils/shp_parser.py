@@ -397,4 +397,187 @@ class SHPParser:
         if lat >= 0:
             return 32600 + zone_number  # Northern hemisphere
         else:
-            return 32700 + zone_number  # Southern hemisphere 
+            return 32700 + zone_number  # Southern hemisphere
+
+    # Minor Task 10.2.2: SHP to UTM Projection and Preparation Methods
+    
+    def _project_to_utm(self, wgs84_coords: List[Tuple[float, float, float]]) -> np.ndarray:
+        """
+        Project WGS84 coordinates to UTM coordinates.
+        
+        Args:
+            wgs84_coords: List of (lon, lat, z) coordinates in WGS84 degrees
+            
+        Returns:
+            numpy array of shape (N, 3) with (x, y, z) coordinates in UTM meters
+            
+        Raises:
+            ValueError: If coordinates are invalid or span multiple UTM zones
+        """
+        if not wgs84_coords:
+            raise ValueError("No coordinates provided")
+        
+        # Validate input coordinates
+        for i, (lon, lat, z) in enumerate(wgs84_coords):
+            if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)) or not isinstance(z, (int, float)):
+                raise ValueError(f"Coordinates must be numeric, got {type(lon)}, {type(lat)}, {type(z)} at index {i}")
+            
+            if not np.isfinite(lon) or not np.isfinite(lat) or not np.isfinite(z):
+                raise ValueError(f"Coordinates must be finite, got {lon}, {lat}, {z} at index {i}")
+            
+            if not (-180 <= lon <= 180):
+                raise ValueError(f"Longitude must be between -180 and 180, got {lon} at index {i}")
+            
+            if not (-90 <= lat <= 90):
+                raise ValueError(f"Latitude must be between -90 and 90, got {lat} at index {i}")
+        
+        # Determine UTM zone from first coordinate
+        first_lon, first_lat = wgs84_coords[0][0], wgs84_coords[0][1]
+        utm_zone = self._get_utm_zone(first_lat, first_lon)
+        
+        # Validate all coordinates are in the same UTM zone
+        for lon, lat, z in wgs84_coords:
+            coord_zone = self._get_utm_zone(lat, lon)
+            if coord_zone != utm_zone:
+                raise ValueError(f"All coordinates must be in the same UTM zone. Expected {utm_zone}, got {coord_zone} for ({lon}, {lat})")
+        
+        # Create transformer
+        try:
+            transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{utm_zone}", always_xy=True)
+        except Exception as e:
+            raise ValueError(f"Failed to create coordinate transformer: {e}")
+        
+        # Project coordinates
+        utm_coords = []
+        for lon, lat, z in wgs84_coords:
+            try:
+                x, y = transformer.transform(lon, lat)
+                utm_coords.append([x, y, z])
+            except Exception as e:
+                raise ValueError(f"Failed to project coordinate ({lon}, {lat}, {z}): {e}")
+        
+        return np.array(utm_coords, dtype=np.float64)
+
+    def _project_to_wgs84(self, utm_coords: np.ndarray, utm_zone: int = None) -> np.ndarray:
+        """
+        Project UTM coordinates back to WGS84 coordinates.
+        
+        Args:
+            utm_coords: numpy array of shape (N, 3) with (x, y, z) coordinates in UTM meters
+            utm_zone: UTM zone EPSG code (e.g., 32617 for UTM Zone 17N). If None, will be inferred.
+            
+        Returns:
+            numpy array of shape (N, 3) with (lon, lat, z) coordinates in WGS84 degrees
+            
+        Raises:
+            ValueError: If coordinates are invalid or UTM zone cannot be determined
+        """
+        if utm_coords is None or len(utm_coords) == 0:
+            raise ValueError("No coordinates provided")
+        
+        if not isinstance(utm_coords, np.ndarray) or utm_coords.shape[1] != 3:
+            raise ValueError("UTM coordinates must be numpy array with shape (N, 3)")
+        
+        # Validate UTM coordinates
+        if not self._validate_utm_coordinates(utm_coords):
+            raise ValueError("Invalid UTM coordinates provided")
+        
+        # Determine UTM zone if not provided
+        if utm_zone is None:
+            # Try to infer from coordinate ranges
+            x_coords = utm_coords[:, 0]
+            y_coords = utm_coords[:, 1]
+            
+            # Rough estimation based on coordinate ranges
+            if np.all(y_coords > 5000000):  # Northern hemisphere
+                if np.all(x_coords > 500000):  # Typical UTM X range
+                    # This is a rough estimate - in practice, we'd need more context
+                    utm_zone = 32617  # Default to UTM Zone 17N
+                else:
+                    raise ValueError("Cannot determine UTM zone from coordinates")
+            else:
+                raise ValueError("Cannot determine UTM zone from coordinates")
+        
+        # Create transformer
+        try:
+            transformer = Transformer.from_crs(f"EPSG:{utm_zone}", "EPSG:4326", always_xy=True)
+        except Exception as e:
+            raise ValueError(f"Failed to create coordinate transformer: {e}")
+        
+        # Project coordinates
+        wgs84_coords = []
+        for x, y, z in utm_coords:
+            try:
+                lon, lat = transformer.transform(x, y)
+                wgs84_coords.append([lon, lat, z])
+            except Exception as e:
+                raise ValueError(f"Failed to project coordinate ({x}, {y}, {z}): {e}")
+        
+        return np.array(wgs84_coords, dtype=np.float64)
+
+    def _validate_utm_coordinates(self, utm_coords: np.ndarray) -> bool:
+        """
+        Validate UTM coordinates.
+        
+        Args:
+            utm_coords: numpy array of shape (N, 3) with (x, y, z) coordinates
+            
+        Returns:
+            True if coordinates are valid UTM coordinates, False otherwise
+        """
+        if utm_coords is None or len(utm_coords) == 0:
+            return False
+        
+        if not isinstance(utm_coords, np.ndarray) or utm_coords.shape[1] != 3:
+            return False
+        
+        # Check for finite values
+        if not np.all(np.isfinite(utm_coords)):
+            return False
+        
+        # Check UTM coordinate ranges
+        x_coords = utm_coords[:, 0]
+        y_coords = utm_coords[:, 1]
+        z_coords = utm_coords[:, 2]
+        
+        # UTM X coordinates should be positive and reasonable (typically 100,000 to 1,000,000)
+        if not np.all(x_coords > 10000):
+            return False
+        
+        # UTM Y coordinates should be positive and reasonable (typically 4,000,000 to 10,000,000)
+        if not np.all(y_coords > 1000000):
+            return False
+        
+        # Z coordinates should be reasonable (typically -1000 to 10000 meters)
+        if not np.all(z_coords > -10000) or not np.all(z_coords < 100000):
+            return False
+        
+        return True
+
+    def process_shp_file_to_utm(self, file_path: str, max_distance_feet: float = 1.0) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        """
+        Process a SHP file and project to UTM coordinates for analysis.
+        
+        Args:
+            file_path: Path to the SHP file
+            max_distance_feet: Maximum distance between points for densification
+            
+        Returns:
+            Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3)
+            in UTM meters and faces is None (since we're creating a boundary polygon)
+        """
+        # Process SHP file to get WGS84 coordinates
+        wgs84_vertices, faces = self.process_shp_file(file_path, max_distance_feet)
+        
+        # Convert numpy array to list of tuples for projection
+        wgs84_coords = [(row[0], row[1], row[2]) for row in wgs84_vertices]
+        
+        # Project to UTM
+        utm_vertices = self._project_to_utm(wgs84_coords)
+        
+        logger.info(f"Projected {len(utm_vertices)} vertices from WGS84 to UTM coordinates")
+        logger.info(f"UTM coordinate ranges: X={utm_vertices[:, 0].min():.1f}-{utm_vertices[:, 0].max():.1f}, "
+                   f"Y={utm_vertices[:, 1].min():.1f}-{utm_vertices[:, 1].max():.1f}, "
+                   f"Z={utm_vertices[:, 2].min():.1f}-{utm_vertices[:, 2].max():.1f}")
+        
+        return utm_vertices, faces 

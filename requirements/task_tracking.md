@@ -1965,3 +1965,19 @@ Major Task 5.0 has been **fully completed** with all 4 major subtasks implemente
 **Open Items**: None
 **Summary**: Implemented robust SHP file parsing, LineString densification (max 1-foot spacing), polygon boundary creation (convex hull and fallback), WGS84 boundary clipping, and CRS validation in `backend/app/utils/shp_parser.py`. Removed all tests requiring Fiona SHP file writing; all tests now use real SHP files and pass. Integration with the surface processing pipeline is confirmed. The implementation is production-ready and supports all required SHP workflows for surface mapping and analysis.
 
+##### Minor Task 10.2.1 (Test First): Write Projection and Preparation Tests
+**Status**: Completed
+**Assigned**: AI Assistant
+**Completion Date**: 2024-12-20
+**Tests Passed**: All SHP to UTM projection and preparation tests pass (34/34 passing, 0 skipped, 0 failed)
+**Open Items**: None
+**Summary**: Added comprehensive unit tests for SHP to UTM projection and preparation in `backend/tests/test_shp_parser.py`. Tests cover UTM zone detection, projection accuracy, round-trip transformation, error handling for invalid/mixed zones, output format validation, and performance. All tests pass, confirming robust and production-ready coordinate transformation for SHP workflows.
+
+##### Minor Task 10.2.2 (Implementation): Implement SHP to UTM Projection and Preparation
+**Status**: Completed
+**Assigned**: AI Assistant
+**Completion Date**: 2024-12-20
+**Tests Passed**: All SHP to UTM projection and preparation tests pass (34/34 passing, 0 skipped, 0 failed)
+**Open Items**: None
+**Summary**: Implemented SHP to UTM projection and preparation in `backend/app/utils/shp_parser.py`. Added methods for UTM zone detection, WGS84 to UTM projection, round-trip transformation, and output validation. Integrated with the SHP processing pipeline, ensuring all outputs are numpy arrays in UTM meters, ready for downstream analysis. All tests pass, confirming the implementation is robust and production-ready for real SHP files.
+

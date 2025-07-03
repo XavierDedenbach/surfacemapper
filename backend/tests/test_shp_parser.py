@@ -7,6 +7,7 @@ import shapely.geometry as sgeom
 from shapely.geometry import Point, Polygon, MultiPoint, LineString
 import pyproj
 from unittest.mock import patch, MagicMock
+import pyproj.exceptions
 
 # Import the module we'll be testing
 from app.utils.shp_parser import SHPParser
@@ -323,14 +324,238 @@ class TestSHPParser:
                 assert all(np.isfinite(c) for c in coord)
 
     def test_crs_validation_methods(self):
-        """Test CRS validation helper methods"""
-        # Test WGS84 CRS
+        """Test CRS validation methods"""
+        # Test WGS84 CRS validation
         wgs84_crs = pyproj.CRS.from_epsg(4326)
         assert self.parser._is_wgs84_crs(wgs84_crs) is True
         
-        # Test non-WGS84 CRS
-        utm_crs = pyproj.CRS.from_epsg(32617)
+        # Test non-WGS84 CRS validation
+        utm_crs = pyproj.CRS.from_epsg(32617)  # UTM Zone 17N
         assert self.parser._is_wgs84_crs(utm_crs) is False
+        
+        # Test invalid CRS should raise CRSError
+        with pytest.raises(pyproj.exceptions.CRSError):
+            pyproj.CRS.from_epsg(99999)
+
+    # Minor Task 10.2.1: SHP to UTM Projection and Preparation Tests
+    
+    def test_shp_projection_to_utm(self):
+        """Test projection of SHP geometries from WGS84 to UTM coordinates"""
+        # Create test WGS84 coordinates (longitude, latitude)
+        wgs84_coords = [
+            (-79.85, 40.15, 300),  # Pittsburgh area
+            (-79.84, 40.15, 301),
+            (-79.84, 40.16, 302),
+            (-79.85, 40.16, 303)
+        ]
+        
+        # Test projection to UTM
+        utm_coords = self.parser._project_to_utm(wgs84_coords)
+        
+        # Verify output format
+        assert isinstance(utm_coords, np.ndarray)
+        assert utm_coords.shape == (4, 3)  # Same number of points, 3 coordinates
+        assert utm_coords.dtype in [np.float32, np.float64]
+        
+        # Verify coordinates are in meters (UTM)
+        # UTM coordinates should be much larger than WGS84 degrees
+        assert np.all(utm_coords[:, 0] > 100000)  # UTM X coordinates are large
+        assert np.all(utm_coords[:, 1] > 4000000)  # UTM Y coordinates are very large
+        
+        # Verify Z coordinates are preserved
+        np.testing.assert_array_almost_equal(utm_coords[:, 2], [300, 301, 302, 303], decimal=1)
+
+    def test_utm_zone_detection(self):
+        """Test automatic UTM zone detection from coordinates"""
+        # Test different UTM zones (returns full EPSG codes)
+        test_cases = [
+            ((-79.85, 40.15), 32617),  # Pittsburgh - UTM Zone 17N
+            ((-118.0, 34.0), 32611),   # Los Angeles - UTM Zone 11N
+            ((2.0, 48.0), 32631),      # Paris - UTM Zone 31N
+            ((151.0, -33.0), 32756),   # Sydney - UTM Zone 56S
+        ]
+        
+        for (lon, lat), expected_zone in test_cases:
+            detected_zone = self.parser._get_utm_zone(lat, lon)
+            assert detected_zone == expected_zone, f"Expected zone {expected_zone} for ({lon}, {lat}), got {detected_zone}"
+
+    def test_projection_accuracy(self):
+        """Test accuracy of WGS84 to UTM projection"""
+        # Test known coordinate pairs with high precision
+        # Pittsburgh area: WGS84 (-79.85, 40.15) should project to UTM Zone 17N
+        wgs84_coords = [(-79.85, 40.15, 300)]
+        
+        utm_coords = self.parser._project_to_utm(wgs84_coords)
+        
+        # Accept a wider range for X due to UTM implementation differences
+        # UTM Zone 17N coordinates for Pittsburgh area should be around:
+        # X: 570000-610000, Y: 4440000-4450000
+        assert 570000 < utm_coords[0, 0] < 610000
+        assert 4440000 < utm_coords[0, 1] < 4450000
+        assert utm_coords[0, 2] == 300  # Z coordinate preserved
+
+    def test_projection_with_different_geometry_types(self):
+        """Test projection of different geometry types to UTM"""
+        # Test points
+        point_coords = [(-79.85, 40.15, 300)]
+        point_utm = self.parser._project_to_utm(point_coords)
+        assert point_utm.shape == (1, 3)
+        
+        # Test multiple points
+        multi_point_coords = [
+            (-79.85, 40.15, 300),
+            (-79.84, 40.15, 301),
+            (-79.84, 40.16, 302)
+        ]
+        multi_point_utm = self.parser._project_to_utm(multi_point_coords)
+        assert multi_point_utm.shape == (3, 3)
+        
+        # Test polygon coordinates (closed ring)
+        polygon_coords = [
+            (-79.85, 40.15, 300),
+            (-79.84, 40.15, 301),
+            (-79.84, 40.16, 302),
+            (-79.85, 40.16, 303),
+            (-79.85, 40.15, 300)  # Closed ring
+        ]
+        polygon_utm = self.parser._project_to_utm(polygon_coords)
+        assert polygon_utm.shape == (5, 3)
+
+    def test_projection_error_handling(self):
+        """Test error handling for invalid coordinates during projection"""
+        # Test with invalid coordinates
+        invalid_coords = [
+            (181.0, 40.15, 300),   # Longitude > 180
+            (-79.85, 91.0, 300),   # Latitude > 90
+            (-181.0, 40.15, 300),  # Longitude < -180
+            (-79.85, -91.0, 300),  # Latitude < -90
+        ]
+        
+        for coords in invalid_coords:
+            with pytest.raises(ValueError):
+                self.parser._project_to_utm([coords])
+
+    def test_projection_performance(self):
+        """Test performance of projection with large datasets"""
+        # Create large dataset
+        import time
+        large_coords = []
+        for i in range(10000):
+            lon = -79.85 + (i % 100) * 0.001
+            lat = 40.15 + (i // 100) * 0.001
+            large_coords.append((lon, lat, 300 + i))
+        
+        # Test projection performance
+        start_time = time.time()
+        utm_coords = self.parser._project_to_utm(large_coords)
+        elapsed_time = time.time() - start_time
+        
+        assert elapsed_time < 5.0  # Should project 10k points in <5 seconds
+        assert utm_coords.shape == (10000, 3)
+        assert np.all(np.isfinite(utm_coords))
+
+    def test_projection_output_format_consistency(self):
+        """Test that projection output format is consistent with PLY parser"""
+        # Test that projected coordinates match expected format
+        wgs84_coords = [(-79.85, 40.15, 300), (-79.84, 40.15, 301)]
+        utm_coords = self.parser._project_to_utm(wgs84_coords)
+        
+        # Should match PLY parser output format
+        assert isinstance(utm_coords, np.ndarray)
+        assert utm_coords.shape[1] == 3  # x, y, z coordinates
+        assert utm_coords.dtype in [np.float32, np.float64]
+        assert len(utm_coords) == 2
+        
+        # Coordinates should be in meters (UTM)
+        assert np.all(utm_coords[:, 0] > 100000)  # X coordinates in meters
+        assert np.all(utm_coords[:, 1] > 4000000)  # Y coordinates in meters
+        assert np.all(utm_coords[:, 2] >= 300)  # Z coordinates preserved
+
+    def test_projection_with_missing_z_coordinates(self):
+        """Test projection when Z coordinates are missing"""
+        # Test 2D coordinates (no Z)
+        wgs84_2d = [(-79.85, 40.15), (-79.84, 40.15)]
+        
+        with pytest.raises(ValueError):
+            self.parser._project_to_utm(wgs84_2d)  # Should require 3D coordinates
+
+    def test_projection_with_nan_coordinates(self):
+        """Test projection handling of NaN coordinates"""
+        # Test with NaN coordinates
+        nan_coords = [(-79.85, 40.15, 300), (np.nan, 40.15, 301)]
+        
+        with pytest.raises(ValueError):
+            self.parser._project_to_utm(nan_coords)
+
+    def test_projection_with_infinite_coordinates(self):
+        """Test projection handling of infinite coordinates"""
+        # Test with infinite coordinates
+        inf_coords = [(-79.85, 40.15, 300), (np.inf, 40.15, 301)]
+        
+        with pytest.raises(ValueError):
+            self.parser._project_to_utm(inf_coords)
+
+    def test_projection_edge_cases(self):
+        """Test projection with edge case coordinates"""
+        # Test coordinates at UTM zone boundaries
+        edge_cases = [
+            (-180.0, 0.0, 300),    # International date line
+            (180.0, 0.0, 300),     # International date line
+            (0.0, 90.0, 300),      # North pole
+            (0.0, -90.0, 300),     # South pole
+        ]
+        
+        for coords in edge_cases:
+            try:
+                utm_coords = self.parser._project_to_utm([coords])
+                assert utm_coords.shape == (1, 3)
+                assert np.all(np.isfinite(utm_coords))
+            except Exception as e:
+                # Some edge cases might not be supported, which is acceptable
+                assert "not supported" in str(e) or "invalid" in str(e)
+
+    def test_projection_round_trip_accuracy(self):
+        """Test round-trip accuracy of projection (WGS84 -> UTM -> WGS84)"""
+        # Test round-trip projection accuracy
+        original_coords = [(-79.85, 40.15, 300), (-79.84, 40.15, 301)]
+        
+        # Project to UTM
+        utm_coords = self.parser._project_to_utm(original_coords)
+        
+        # Project back to WGS84, explicitly pass UTM zone
+        utm_zone = self.parser._get_utm_zone(40.15, -79.85)
+        wgs84_coords = self.parser._project_to_wgs84(utm_coords, utm_zone=utm_zone)
+        
+        # Verify round-trip accuracy (within reasonable tolerance)
+        np.testing.assert_array_almost_equal(
+            np.array(original_coords), 
+            wgs84_coords, 
+            decimal=5  # Slightly relaxed precision for round-trip
+        )
+
+    def test_projection_with_different_utm_zones(self):
+        """Test projection with coordinates in different UTM zones"""
+        # Test coordinates that span multiple UTM zones
+        multi_zone_coords = [
+            (-79.85, 40.15, 300),  # UTM Zone 17N
+            (-118.0, 34.0, 301),   # UTM Zone 11N
+        ]
+        
+        # Should raise error for mixed UTM zones
+        with pytest.raises(ValueError):
+            self.parser._project_to_utm(multi_zone_coords)
+
+    def test_projection_output_validation(self):
+        """Test validation of projection output"""
+        wgs84_coords = [(-79.85, 40.15, 300), (-79.84, 40.15, 301)]
+        utm_coords = self.parser._project_to_utm(wgs84_coords)
+        
+        # Validate output
+        assert self.parser._validate_utm_coordinates(utm_coords)
+        
+        # Test invalid UTM coordinates
+        invalid_utm = np.array([[0, 0, 300], [100, 100, 301]])  # Too small for UTM
+        assert not self.parser._validate_utm_coordinates(invalid_utm)
 
 
 if __name__ == "__main__":
