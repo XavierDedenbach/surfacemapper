@@ -15,11 +15,11 @@ class TestPointQuery:
         self.mock_thickness_response = {
             "thickness_layers": [
                 {
-                    "layer_name": "Surface 1 to Surface 2",
+                    "layer_designation": "Surface 1 to Surface 2",
                     "thickness_feet": 15.5
                 },
                 {
-                    "layer_name": "Surface 2 to Surface 3", 
+                    "layer_designation": "Surface 2 to Surface 3", 
                     "thickness_feet": 8.2
                 }
             ],

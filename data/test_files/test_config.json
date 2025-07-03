@@ -7,6 +7,14 @@
       "scaling_factor": 1.0
     }
   },
+  "layer_1": {
+      "tonnage": 1800,
+      "georeference": {
+        "wgs84_lat": 37.774900,
+        "wgs84_lon": -122.419400,
+        "scaling_factor": 1.0
+      }
+  },
   "analysis_boundary": {
     "coordinates": [
       { "lat": 37.773530, "lon": -122.421130 },
@@ -15,5 +23,5 @@
       { "lat": 37.776270, "lon": -122.421130 }
     ]
   },
-  "orientation": 90
+  "orientation": 360
 } 

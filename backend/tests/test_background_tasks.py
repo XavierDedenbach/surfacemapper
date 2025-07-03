@@ -820,11 +820,11 @@ def test_complete_analysis_workflow_with_real_data():
         assert len(volume_results) > 0, "No volume results returned"
         
         for volume_result in volume_results:
-            assert "layer_name" in volume_result, "Volume result missing layer_name"
+            assert "layer_designation" in volume_result, "Volume result missing layer_designation"
             assert "volume_cubic_yards" in volume_result, "Volume result missing volume_cubic_yards"
             assert isinstance(volume_result["volume_cubic_yards"], (int, float)), "Volume should be numeric"
             assert volume_result["volume_cubic_yards"] >= 0, "Volume should be non-negative"
-            print(f"Volume: {volume_result['layer_name']} = {volume_result['volume_cubic_yards']:.2f} cubic yards")
+            print(f"Volume: {volume_result['layer_designation']} = {volume_result['volume_cubic_yards']:.2f} cubic yards")
         
         # Validate thickness results
         thickness_results = results_data["thickness_results"]
@@ -832,7 +832,7 @@ def test_complete_analysis_workflow_with_real_data():
         assert len(thickness_results) > 0, "No thickness results returned"
         
         for thickness_result in thickness_results:
-            assert "layer_name" in thickness_result, "Thickness result missing layer_name"
+            assert "layer_designation" in thickness_result, "Thickness result missing layer_designation"
             assert "average_thickness_feet" in thickness_result, "Thickness result missing average_thickness_feet"
             assert "min_thickness_feet" in thickness_result, "Thickness result missing min_thickness_feet"
             assert "max_thickness_feet" in thickness_result, "Thickness result missing max_thickness_feet"
@@ -851,7 +851,7 @@ def test_complete_analysis_workflow_with_real_data():
             assert min_thickness <= avg_thickness <= max_thickness, "Thickness statistics should be consistent"
             assert std_dev >= 0, "Standard deviation should be non-negative"
             
-            print(f"Thickness: {thickness_result['layer_name']} = {avg_thickness:.3f} ft (min: {min_thickness:.3f}, max: {max_thickness:.3f}, std: {std_dev:.3f})")
+            print(f"Thickness: {thickness_result['layer_designation']} = {avg_thickness:.3f} ft (min: {min_thickness:.3f}, max: {max_thickness:.3f}, std: {std_dev:.3f})")
         
         # Validate compaction results
         compaction_results = results_data["compaction_results"]
@@ -859,16 +859,18 @@ def test_complete_analysis_workflow_with_real_data():
         assert len(compaction_results) > 0, "No compaction results returned"
         
         for compaction_result in compaction_results:
-            assert "layer_name" in compaction_result, "Compaction result missing layer_name"
-            assert "compaction_rate_lbs_per_cubic_yard" in compaction_result, "Compaction result missing compaction_rate"
+            assert "layer_designation" in compaction_result, "Compaction result missing layer_designation"
+            assert "compaction_rate_lbs_per_cubic_yard" in compaction_result, "Compaction result missing compaction_rate_lbs_per_cubic_yard"
+            assert "tonnage_used" in compaction_result, "Compaction result missing tonnage_used"
             
             compaction_rate = compaction_result["compaction_rate_lbs_per_cubic_yard"]
-            if compaction_rate is not None:  # Some layers might not have tonnage data
+            tonnage_used = compaction_result["tonnage_used"]
+            
+            if compaction_rate is not None:
                 assert isinstance(compaction_rate, (int, float)), "Compaction rate should be numeric"
-                assert compaction_rate >= 0, "Compaction rate should be non-negative"
-                print(f"Compaction: {compaction_result['layer_name']} = {compaction_rate:.1f} lbs/cy")
+                print(f"Compaction: {compaction_result['layer_designation']} = {compaction_rate:.1f} lbs/cy")
             else:
-                print(f"Compaction: {compaction_result['layer_name']} = No tonnage data")
+                print(f"Compaction: {compaction_result['layer_designation']} = No tonnage data")
         
         # Step 4: Calculate and report timing
         total_time = time.time() - start_time

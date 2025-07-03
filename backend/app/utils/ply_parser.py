@@ -28,38 +28,71 @@ class PLYParser:
         """
         try:
             plydata = PlyData.read(file_path)
+            # Debug: check what format is actually returned
+            fmt = plydata.header.format
+            logger.debug(f"PLY format detected: {fmt}, type: {type(fmt)}")
+            
+            # Handle different format representations from plyfile
+            if hasattr(fmt, '__call__'):
+                # If format is a method, call it to get the string
+                fmt_str = fmt()
+            else:
+                fmt_str = str(fmt)
+            
+            # Check if format is supported (case-insensitive)
+            fmt_lower = fmt_str.lower()
+            if not any(supported in fmt_lower for supported in ['ascii', 'binary_little_endian', 'binary_big_endian']):
+                raise ValueError(f"Unsupported PLY format: {fmt_str}")
+            
+            # Defensive: check for required elements
+            if 'vertex' not in plydata:
+                raise ValueError("PLY file does not contain vertex data")
+            # Extract vertices (x, y, z only)
             vertices = self._extract_vertices(plydata)
             faces = self._extract_faces(plydata)
-            
             logger.info(f"Successfully parsed PLY file: {file_path}")
             logger.info(f"Vertices: {len(vertices)}, Faces: {len(faces) if faces is not None else 0}")
-            
+            # Output format checks
+            if not isinstance(vertices, np.ndarray) or vertices.ndim != 2 or vertices.shape[1] != 3:
+                raise ValueError(f"Parsed vertices array has invalid format: {type(vertices)}, shape {getattr(vertices, 'shape', None)}")
+            if faces is not None and (not isinstance(faces, np.ndarray) or (faces.ndim != 2 and len(faces) > 0)):
+                raise ValueError(f"Parsed faces array has invalid format: {type(faces)}, shape {getattr(faces, 'shape', None)}")
             return vertices, faces
-            
         except Exception as e:
             logger.error(f"Error parsing PLY file {file_path}: {str(e)}")
-            # Provide more specific error messages for common issues
-            if "corrupted" in str(e).lower() or "incomplete" in str(e).lower():
+            msg = str(e).lower()
+            if "corrupted" in msg or "incomplete" in msg or "unexpected end" in msg or "truncated" in msg:
                 raise ValueError(f"PLY file appears to be corrupted or incomplete: {str(e)}")
-            elif "not found" in str(e).lower():
+            elif "not found" in msg:
                 raise FileNotFoundError(f"PLY file not found: {file_path}")
+            elif "missing one or more of x, y, z" in msg:
+                raise ValueError(f"PLY file missing required x, y, z vertex properties: {str(e)}")
             else:
                 raise ValueError(f"Error parsing PLY file: {str(e)}")
     
     def _extract_vertices(self, plydata: PlyData) -> np.ndarray:
         """
-        Extract vertex data from PLY file
+        Extract only x, y, z vertex data from PLY file, ignoring other properties.
+        Handles both ASCII and binary PLY files, and ignores extra properties (normals, colors, etc).
         """
         if 'vertex' not in plydata:
             raise ValueError("PLY file does not contain vertex data")
-        
         vertex_data = plydata['vertex']
-        vertices = np.column_stack([
-            vertex_data['x'],
-            vertex_data['y'],
-            vertex_data['z']
-        ])
-        
+        names = vertex_data.data.dtype.names
+        required = ('x', 'y', 'z')
+        if not all(r in names for r in required):
+            raise ValueError("PLY vertex data missing one or more of x, y, z properties")
+        try:
+            # Defensive: always extract as float32 for consistency
+            x = np.asarray(vertex_data['x'], dtype=np.float32)
+            y = np.asarray(vertex_data['y'], dtype=np.float32)
+            z = np.asarray(vertex_data['z'], dtype=np.float32)
+            vertices = np.column_stack([x, y, z])
+        except Exception as e:
+            logger.error(f"Error extracting x, y, z from vertex data: {e}")
+            raise ValueError(f"Failed to extract x, y, z coordinates from PLY vertex data: {e}")
+        if vertices.ndim != 2 or vertices.shape[1] != 3:
+            raise ValueError(f"Extracted vertex array has invalid shape: {vertices.shape}")
         return vertices
     
     def _extract_faces(self, plydata: PlyData) -> Optional[np.ndarray]:
@@ -114,8 +147,16 @@ class PLYParser:
             # Extract element names from the tuple
             element_names = [elem.name for elem in plydata.elements]
             
+            # Fix: properly extract format string
+            fmt = plydata.header.format
+            if hasattr(fmt, '__call__'):
+                # If format is a method, call it to get the string
+                format_str = fmt()
+            else:
+                format_str = str(fmt)
+            
             return {
-                'format': plydata.header.format,
+                'format': format_str,
                 'elements': element_names,
                 'vertex_count': len(plydata['vertex']) if 'vertex' in plydata else 0,
                 'face_count': len(plydata['face']) if 'face' in plydata else 0,

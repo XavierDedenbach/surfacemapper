@@ -3,10 +3,11 @@ import uuid
 import logging
 from typing import Dict, Any, Optional
 from fastapi import HTTPException
-from app.utils.serialization import make_json_serializable, validate_json_serializable
+from app.utils.serialization import make_json_serializable, validate_json_serializable, clean_floats_for_json
 from app.services.surface_processor import SurfaceProcessor
 from app.services.surface_cache import surface_cache
 from app.utils.ply_parser import PLYParser
+from app.services.coord_transformer import CoordinateTransformer, TransformationPipeline
 import os
 import numpy as np
 
@@ -30,6 +31,7 @@ class AnalysisExecutor:
         self._results_cache: Dict[str, Dict[str, Any]] = {}
         self.MAX_CONCURRENT_JOBS = 10
         self.surface_processor = SurfaceProcessor()
+        self.coord_transformer = CoordinateTransformer()
         
         # Performance optimization: Pre-allocate memory pools
         self._chunk_size = 10000  # Process data in chunks for better memory management
@@ -102,17 +104,84 @@ class AnalysisExecutor:
             
             vertices, faces = parser.parse_ply_file(file_path)
             logger.info(f"[{analysis_id}] Loaded {len(vertices)} vertices, {len(faces) if faces is not None else 0} faces")
+
+            # --- Apply Transformation Pipeline ---
+            georef_params_list = params.get('georeference_params', [])
+            if georef_params_list and i < len(georef_params_list):
+                georef = georef_params_list[i]
+                anchor_lat = georef.get('wgs84_lat', 0.0)
+                anchor_lon = georef.get('wgs84_lon', 0.0)
+                rotation = georef.get('orientation_degrees', 0.0)
+                scale = georef.get('scaling_factor', 1.0)
+            else:
+                anchor_lat = 0.0
+                anchor_lon = 0.0
+                rotation = 0.0
+                scale = 1.0
+            pipeline = TransformationPipeline(
+                anchor_lat=anchor_lat,
+                anchor_lon=anchor_lon,
+                rotation_degrees=rotation,
+                scale_factor=scale,
+                center_surface=True
+            )
+            transformed_vertices = pipeline.transform_to_utm(vertices)
+            # Log the final center in UTM and WGS84
+            center_utm = np.mean(transformed_vertices, axis=0)
+            center_lon, center_lat = pipeline.utm_to_wgs84_transformer.transform(center_utm[0], center_utm[1])
+            logger.info(f"[{analysis_id}] Surface {i+1} center after transform: UTM=({center_utm[0]:.3f}, {center_utm[1]:.3f}), WGS84=({center_lat:.6f}, {center_lon:.6f})")
             
             surfaces_to_process.append({
                 "id": sid,
                 "name": cached_surface.get("filename", "Unknown"),
-                "vertices": vertices,
+                "vertices": transformed_vertices,
                 "faces": faces
             })
             
             # Update progress
             progress = 20.0 + (i / len(surface_ids)) * 30.0
             self._update_job_status(analysis_id, "running", progress, f"loaded_surface_{i+1}")
+        
+        # Step 2: Apply boundary clipping if boundary is provided
+        analysis_boundary = params.get('analysis_boundary', {})
+        if analysis_boundary and 'wgs84_coordinates' in analysis_boundary:
+            logger.info(f"[{analysis_id}] Processing boundary clipping")
+            self._update_job_status(analysis_id, "running", 40.0, "processing_boundary")
+            
+            # Extract WGS84 boundary coordinates
+            wgs84_boundary = analysis_boundary['wgs84_coordinates']
+            logger.info(f"[{analysis_id}] WGS84 boundary: {wgs84_boundary}")
+            
+            # Transform WGS84 boundary to UTM coordinates
+            try:
+                utm_boundary = self.coord_transformer.transform_boundary_coordinates(wgs84_boundary)
+                logger.info(f"[{analysis_id}] UTM boundary: {utm_boundary}")
+            except Exception as e:
+                logger.error(f"[{analysis_id}] Failed to transform boundary coordinates: {e}")
+                raise RuntimeError(f"Boundary coordinate transformation failed: {e}")
+            
+            # Apply boundary clipping to all surfaces
+            for i, surface in enumerate(surfaces_to_process):
+                original_vertex_count = len(surface['vertices'])
+                logger.info(f"[{analysis_id}] Clipping surface {i+1} from {original_vertex_count} vertices")
+                
+                # Clip vertices to boundary
+                clipped_vertices = self.surface_processor.clip_to_boundary(surface['vertices'], utm_boundary)
+                clipped_vertex_count = len(clipped_vertices)
+                
+                # Update surface with clipped vertices
+                surface['vertices'] = clipped_vertices
+                
+                # Update faces if they exist (this is a simplified approach - in production you might want to re-triangulate)
+                faces = surface.get('faces')
+                if faces is not None and ((hasattr(faces, 'size') and faces.size > 0) or (isinstance(faces, list) and len(faces) > 0)):
+                    # For now, we'll keep the faces but note that they may reference non-existent vertices
+                    # In a production system, you'd want to re-triangulate the clipped surface
+                    logger.warning(f"[{analysis_id}] Surface {i+1} has faces that may need re-triangulation after clipping")
+                
+                logger.info(f"[{analysis_id}] Surface {i+1} clipped: {original_vertex_count} -> {clipped_vertex_count} vertices")
+            
+            logger.info(f"[{analysis_id}] Boundary clipping completed for all surfaces")
         
         # Check if we need to generate a baseline surface
         generate_base_surface = params.get('generate_base_surface', False)
@@ -172,8 +241,8 @@ class AnalysisExecutor:
         logger.info(f"[{analysis_id}] Serializing results for caching")
         self._update_job_status(analysis_id, "running", 90.0, "serializing_results")
         
-        # The surface processor already applies make_json_serializable, but let's double-check
-        serializable_results = make_json_serializable(analysis_results)
+        # Clean out-of-range floats for JSON compliance
+        serializable_results = clean_floats_for_json(analysis_results)
         logger.info(f"[{analysis_id}] Results serialized successfully")
 
         # Validate that results are actually JSON serializable

@@ -48,7 +48,7 @@ const PointAnalysisPopup = ({ isVisible, position, thicknessData, loading, onClo
             <tbody>
               {thicknessData.thickness_layers.map((layer, index) => (
                 <tr key={index} style={{ borderBottom: '1px solid #333' }}>
-                  <td style={{ padding: '2px 4px' }}>{layer.layer_name}</td>
+                  <td style={{ padding: '2px 4px' }}>{layer.layer_designation}</td>
                   <td style={{ textAlign: 'right', padding: '2px 4px' }}>
                     {layer.thickness_feet?.toFixed(3) || 'N/A'}
                   </td>

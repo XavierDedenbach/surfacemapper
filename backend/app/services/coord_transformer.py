@@ -21,7 +21,7 @@ class TransformationPipeline:
     Complete coordinate transformation pipeline combining scaling, rotation, and UTM transformation
     """
     
-    def __init__(self, anchor_lat: float, anchor_lon: float, rotation_degrees: float, scale_factor: float):
+    def __init__(self, anchor_lat: float, anchor_lon: float, rotation_degrees: float, scale_factor: float, center_surface: bool = True):
         """
         Initialize transformation pipeline
         
@@ -30,6 +30,7 @@ class TransformationPipeline:
             anchor_lon: WGS84 longitude of anchor point
             rotation_degrees: Rotation angle in degrees (clockwise from North)
             scale_factor: Uniform scaling factor
+            center_surface: Whether to center the surface at the anchor point (default: True)
         """
         # Validate parameters
         if not isinstance(anchor_lat, (int, float)) or np.isnan(anchor_lat) or np.isinf(anchor_lat):
@@ -52,6 +53,7 @@ class TransformationPipeline:
         self.anchor_lon = anchor_lon
         self.rotation_degrees = rotation_degrees
         self.scale_factor = scale_factor
+        self.center_surface = center_surface
         
         # Initialize coordinate systems
         self.wgs84 = pyproj.CRS("EPSG:4326")
@@ -77,6 +79,9 @@ class TransformationPipeline:
         
         # Combined transformation matrix (scale then rotate)
         self.combined_matrix = np.dot(self.rotation_matrix, self.scaling_matrix)
+        
+        # Initialize surface center storage for inverse transformation
+        self._surface_center = None
     
     def _determine_utm_zone(self) -> str:
         """Determine UTM zone for the anchor point"""
@@ -126,6 +131,25 @@ class TransformationPipeline:
         if points.shape[0] == 0:
             return points.copy()
         
+        # --- FEET TO METER CONVERSION ---
+        FEET_TO_METER = 0.3048
+        points = points * FEET_TO_METER
+        
+        # Store original points for potential inverse transformation
+        original_points = points.copy()
+        
+        # Apply surface centering if enabled
+        if self.center_surface:
+            # Calculate surface center
+            surface_center = np.mean(points, axis=0)
+            # Center the surface at origin
+            points = points - surface_center
+            # Store surface center for inverse transformation
+            self._surface_center = surface_center
+        else:
+            # For backward compatibility, don't center
+            self._surface_center = None
+        
         # Apply local transformations (scale then rotate)
         transformed_points = np.dot(points, self.combined_matrix.T)
         
@@ -133,7 +157,12 @@ class TransformationPipeline:
         utm_points = transformed_points.copy()
         utm_points[:, 0] += self.anchor_utm_x
         utm_points[:, 1] += self.anchor_utm_y
-        # Z coordinate remains unchanged (already in feet)
+        
+        # For Z coordinate: if surface centering was enabled, restore the original Z coordinates
+        # from the surface center, otherwise keep as is
+        if self.center_surface and self._surface_center is not None:
+            # Add back the original Z coordinate from the surface center
+            utm_points[:, 2] += self._surface_center[2]
         
         return utm_points
     
@@ -189,9 +218,17 @@ class TransformationPipeline:
         local_transformed[:, 0] -= self.anchor_utm_x
         local_transformed[:, 1] -= self.anchor_utm_y
         
+        # For Z coordinate: if surface centering was enabled, remove the surface center Z coordinate
+        if self.center_surface and self._surface_center is not None:
+            local_transformed[:, 2] -= self._surface_center[2]
+        
         # Apply inverse local transformations
         inverse_matrix = np.linalg.inv(self.combined_matrix)
         original_points = np.dot(local_transformed, inverse_matrix.T)
+        
+        # Restore surface center if it was centered during transformation
+        if self.center_surface and self._surface_center is not None:
+            original_points = original_points + self._surface_center
         
         return original_points
     
@@ -202,15 +239,16 @@ class TransformationPipeline:
         Returns:
             Dictionary containing transformation parameters and metadata
         """
-        return {
+        metadata = {
             'anchor_lat': self.anchor_lat,
             'anchor_lon': self.anchor_lon,
             'rotation_degrees': self.rotation_degrees,
             'scale_factor': self.scale_factor,
+            'center_surface': self.center_surface,
             'utm_zone': self.utm_zone,
             'anchor_utm_x': self.anchor_utm_x,
             'anchor_utm_y': self.anchor_utm_y,
-            'transformation_order': ['scale', 'rotate', 'translate'],
+            'transformation_order': ['center', 'scale', 'rotate', 'translate'] if self.center_surface else ['scale', 'rotate', 'translate'],
             'coordinate_systems': {
                 'source': 'local_ply',
                 'target': 'utm',
@@ -218,6 +256,12 @@ class TransformationPipeline:
                 'utm_epsg': self.utm_zone
             }
         }
+        
+        # Add surface center information if available
+        if self._surface_center is not None:
+            metadata['surface_center'] = self._surface_center.tolist()
+        
+        return metadata
 
 
 class CoordinateTransformer:
@@ -391,9 +435,23 @@ class CoordinateTransformer:
     ) -> List[Tuple[float, float]]:
         """
         Transform WGS84 boundary coordinates to UTM
+        
+        Args:
+            wgs84_boundary: List of 4 WGS84 coordinate pairs [(lat1, lon1), (lat2, lon2), (lat3, lon3), (lat4, lon4)]
+            
+        Returns:
+            List of 4 UTM coordinate pairs [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
         """
-        # TODO: Implement boundary coordinate transformation
-        return wgs84_boundary
+        if len(wgs84_boundary) != 4:
+            raise ValueError("Boundary must have exactly 4 coordinate pairs")
+        
+        # Transform each coordinate pair from WGS84 to UTM
+        utm_boundary = []
+        for lat, lon in wgs84_boundary:
+            utm_x, utm_y = self.transform_wgs84_to_utm(lat, lon)
+            utm_boundary.append((utm_x, utm_y))
+        
+        return utm_boundary
     
     def validate_transformation_accuracy(self, original: np.ndarray, transformed: np.ndarray) -> bool:
         """
@@ -537,7 +595,8 @@ class CoordinateTransformer:
         anchor_lat: float, 
         anchor_lon: float, 
         rotation_degrees: float, 
-        scale_factor: float
+        scale_factor: float,
+        center_surface: bool = True
     ) -> TransformationPipeline:
         """
         Create a complete transformation pipeline
@@ -547,6 +606,7 @@ class CoordinateTransformer:
             anchor_lon: WGS84 longitude of anchor point
             rotation_degrees: Rotation angle in degrees (clockwise from North)
             scale_factor: Uniform scaling factor
+            center_surface: Whether to center the surface at the anchor point (default: True)
             
         Returns:
             TransformationPipeline instance
@@ -555,8 +615,9 @@ class CoordinateTransformer:
             anchor_lat=anchor_lat,
             anchor_lon=anchor_lon,
             rotation_degrees=rotation_degrees,
-            scale_factor=scale_factor
-        ) 
+            scale_factor=scale_factor,
+            center_surface=center_surface
+        )
 
 
 class SurfaceAlignment:

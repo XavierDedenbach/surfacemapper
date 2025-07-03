@@ -64,7 +64,7 @@ class TestBinaryPLYIntegration:
         assert len(results_data["thickness_results"]) > 0
         volume_result = results_data["volume_results"][0]
         assert volume_result["volume_cubic_yards"] > 0
-        assert "Surface 0 to 1" in volume_result["layer_name"]
+        assert "Surface 0 to 1" in volume_result["layer_designation"]
 
     def test_error_recovery_with_corrupted_binary_ply(self):
         # Create corrupted binary PLY file

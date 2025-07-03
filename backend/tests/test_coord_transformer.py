@@ -5,6 +5,7 @@ import pytest
 import numpy as np
 import time
 from typing import List, Tuple
+from app.services.coord_transformer import TransformationPipeline, CoordinateTransformer, GeoreferenceParams
 
 
 class ControlPointTest:
@@ -281,6 +282,338 @@ class TestCoordinateTransformer:
         zone2 = self.transformer.determine_utm_zone(lon)
         
         assert zone1 == zone2, "Zone detection should be consistent"
+
+
+class TestSurfaceCenterAnchoring:
+    """Test surface center anchoring functionality"""
+    
+    def test_surface_centering_enabled(self):
+        """Test that surface centering works correctly when enabled"""
+        # Create a surface with known center
+        surface_points = np.array([
+            [0, 0, 0],   # Center point
+            [1, 1, 1],   # Offset from center
+            [-1, -1, -1], # Offset from center
+            [2, 0, 0],   # Further offset
+            [0, 2, 0]    # Further offset
+        ], dtype=np.float32)
+        
+        # Expected center should be [0.4, 0.4, 0.0] (sum of all points / 5)
+        expected_center = np.mean(surface_points, axis=0)
+        assert np.allclose(expected_center, [0.4, 0.4, 0.0])
+        
+        # Create transformation pipeline with centering enabled
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=0.0,
+            scale_factor=1.0,
+            center_surface=True
+        )
+        
+        # Transform to UTM
+        utm_points = pipeline.transform_to_utm(surface_points)
+        
+        # Verify surface center was stored
+        assert pipeline._surface_center is not None
+        assert np.allclose(pipeline._surface_center, expected_center)
+        
+        # Verify transformation metadata includes centering info
+        metadata = pipeline.get_transformation_metadata()
+        assert metadata['center_surface'] is True
+        assert 'center' in metadata['transformation_order']
+        assert 'surface_center' in metadata
+        assert np.allclose(metadata['surface_center'], expected_center)
+        
+        # Transform back to local coordinates
+        recovered_points = pipeline.inverse_transform(utm_points)
+        
+        # Verify round-trip transformation preserves original points
+        np.testing.assert_array_almost_equal(surface_points, recovered_points, decimal=6)
+    
+    def test_surface_centering_disabled(self):
+        """Test that surface centering is disabled when specified"""
+        surface_points = np.array([
+            [10, 20, 30],
+            [11, 21, 31],
+            [12, 22, 32]
+        ], dtype=np.float32)
+        
+        # Create transformation pipeline with centering disabled
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=0.0,
+            scale_factor=1.0,
+            center_surface=False
+        )
+        
+        # Transform to UTM
+        utm_points = pipeline.transform_to_utm(surface_points)
+        
+        # Verify surface center was not stored
+        assert pipeline._surface_center is None
+        
+        # Verify transformation metadata reflects disabled centering
+        metadata = pipeline.get_transformation_metadata()
+        assert metadata['center_surface'] is False
+        assert 'center' not in metadata['transformation_order']
+        assert 'surface_center' not in metadata
+        
+        # Transform back to local coordinates
+        recovered_points = pipeline.inverse_transform(utm_points)
+        
+        # Verify round-trip transformation preserves original points
+        np.testing.assert_array_almost_equal(surface_points, recovered_points, decimal=6)
+    
+    def test_surface_centering_with_rotation_and_scaling(self):
+        """Test surface centering combined with rotation and scaling"""
+        surface_points = np.array([
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [1, 1, 0]
+        ], dtype=np.float32)
+        
+        # Create transformation pipeline with rotation and scaling
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=45.0,
+            scale_factor=2.0,
+            center_surface=True
+        )
+        
+        # Transform to UTM
+        utm_points = pipeline.transform_to_utm(surface_points)
+        
+        # Verify surface center was calculated and stored
+        expected_center = np.mean(surface_points, axis=0)
+        assert pipeline._surface_center is not None
+        assert np.allclose(pipeline._surface_center, expected_center)
+        
+        # Transform back to local coordinates
+        recovered_points = pipeline.inverse_transform(utm_points)
+        
+        # Verify round-trip transformation preserves original points
+        np.testing.assert_array_almost_equal(surface_points, recovered_points, decimal=6)
+    
+    def test_surface_centering_with_empty_surface(self):
+        """Test surface centering with empty surface"""
+        empty_surface = np.empty((0, 3), dtype=np.float32)
+        
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=0.0,
+            scale_factor=1.0,
+            center_surface=True
+        )
+        
+        # Transform empty surface
+        utm_points = pipeline.transform_to_utm(empty_surface)
+        
+        # Should return empty array
+        assert utm_points.shape == (0, 3)
+        assert pipeline._surface_center is None
+        
+        # Transform back
+        recovered_points = pipeline.inverse_transform(utm_points)
+        assert recovered_points.shape == (0, 3)
+    
+    def test_surface_centering_with_single_point(self):
+        """Test surface centering with single point surface"""
+        single_point = np.array([[10.0, 20.0, 30.0]], dtype=np.float32)
+        
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=0.0,
+            scale_factor=1.0,
+            center_surface=True
+        )
+        
+        # Transform single point
+        utm_points = pipeline.transform_to_utm(single_point)
+        
+        # Surface center should be the single point
+        assert pipeline._surface_center is not None
+        assert np.allclose(pipeline._surface_center, single_point[0])
+        
+        # Transform back
+        recovered_points = pipeline.inverse_transform(utm_points)
+        np.testing.assert_array_almost_equal(single_point, recovered_points, decimal=6)
+    
+    def test_surface_centering_metadata_consistency(self):
+        """Test that metadata is consistent between centering modes"""
+        surface_points = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32)
+        
+        # Test with centering enabled
+        pipeline_centered = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=30.0,
+            scale_factor=1.5,
+            center_surface=True
+        )
+        
+        # Test with centering disabled
+        pipeline_not_centered = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=30.0,
+            scale_factor=1.5,
+            center_surface=False
+        )
+        
+        # Transform both
+        utm_centered = pipeline_centered.transform_to_utm(surface_points)
+        utm_not_centered = pipeline_not_centered.transform_to_utm(surface_points)
+        
+        # Get metadata
+        metadata_centered = pipeline_centered.get_transformation_metadata()
+        metadata_not_centered = pipeline_not_centered.get_transformation_metadata()
+        
+        # Verify metadata differences
+        assert metadata_centered['center_surface'] is True
+        assert metadata_not_centered['center_surface'] is False
+        assert 'center' in metadata_centered['transformation_order']
+        assert 'center' not in metadata_not_centered['transformation_order']
+        assert 'surface_center' in metadata_centered
+        assert 'surface_center' not in metadata_not_centered
+        
+        # Verify other metadata is identical
+        for key in ['anchor_lat', 'anchor_lon', 'rotation_degrees', 'scale_factor', 'utm_zone']:
+            assert metadata_centered[key] == metadata_not_centered[key]
+    
+    def test_surface_centering_backward_compatibility(self):
+        """Test that surface centering is backward compatible (default behavior)"""
+        surface_points = np.array([[0, 0, 0], [1, 1, 1]], dtype=np.float32)
+        
+        # Create pipeline without specifying center_surface (should default to True)
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=0.0,
+            scale_factor=1.0
+        )
+        
+        # Verify centering is enabled by default
+        assert pipeline.center_surface is True
+        
+        # Transform and verify centering works
+        utm_points = pipeline.transform_to_utm(surface_points)
+        assert pipeline._surface_center is not None
+        
+        # Transform back
+        recovered_points = pipeline.inverse_transform(utm_points)
+        np.testing.assert_array_almost_equal(surface_points, recovered_points, decimal=6)
+    
+    def test_surface_centering_with_large_surface(self):
+        """Test surface centering with larger surface"""
+        # Create a larger surface with known properties
+        np.random.seed(42)  # For reproducible tests
+        surface_points = np.random.rand(1000, 3) * 100  # 1000 points in 0-100 range
+        
+        pipeline = TransformationPipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=15.0,
+            scale_factor=0.5,
+            center_surface=True
+        )
+        
+        # Transform to UTM
+        utm_points = pipeline.transform_to_utm(surface_points)
+        
+        # Verify surface center was calculated correctly
+        expected_center = np.mean(surface_points, axis=0)
+        assert pipeline._surface_center is not None
+        assert np.allclose(pipeline._surface_center, expected_center, atol=1e-10)
+        
+        # Transform back
+        recovered_points = pipeline.inverse_transform(utm_points)
+        
+        # Verify round-trip transformation preserves original points
+        np.testing.assert_array_almost_equal(surface_points, recovered_points, decimal=6)
+    
+    def test_surface_centering_anchor_point_accuracy(self):
+        """Test that the anchor point is correctly positioned when surface is centered"""
+        # Create a surface with known center
+        surface_center = np.array([50.0, 75.0, 25.0])
+        surface_points = np.array([
+            surface_center + [0, 0, 0],    # Center point
+            surface_center + [10, 0, 0],   # 10 units east
+            surface_center + [0, 10, 0],   # 10 units north
+            surface_center + [-10, 0, 0],  # 10 units west
+            surface_center + [0, -10, 0]   # 10 units south
+        ], dtype=np.float32)
+        
+        # Define anchor point in WGS84
+        anchor_lat, anchor_lon = 40.7128, -74.0060
+        
+        pipeline = TransformationPipeline(
+            anchor_lat=anchor_lat,
+            anchor_lon=anchor_lon,
+            rotation_degrees=0.0,
+            scale_factor=1.0,
+            center_surface=True
+        )
+        
+        # Transform to UTM
+        utm_points = pipeline.transform_to_utm(surface_points)
+        
+        # Debug output
+        print(f"Surface center: {surface_center}")
+        print(f"First point (center point): {surface_points[0]}")
+        print(f"Transformed center point: {utm_points[0]}")
+        print(f"Expected center UTM: [{pipeline.anchor_utm_x}, {pipeline.anchor_utm_y}, {surface_center[2]}]")
+        print(f"Stored surface center: {pipeline._surface_center}")
+        
+        # When surface centering is enabled, the surface center gets translated to the anchor coordinates
+        # So the center point (which was at surface_center) should now be at the anchor UTM coordinates
+        center_point_utm = utm_points[0]  # First point was at surface center
+        expected_center_utm = np.array([pipeline.anchor_utm_x, pipeline.anchor_utm_y, surface_center[2]])
+        
+        # Verify center point is at anchor coordinates (within floating point precision)
+        np.testing.assert_array_almost_equal(center_point_utm, expected_center_utm, decimal=6)
+        
+        # Also verify that the surface center was stored correctly
+        assert pipeline._surface_center is not None
+        assert np.allclose(pipeline._surface_center, surface_center)
+    
+    def test_create_transformation_pipeline_with_centering(self):
+        """Test create_transformation_pipeline method with centering parameter"""
+        transformer = CoordinateTransformer()
+        
+        # Test with centering enabled
+        pipeline_centered = transformer.create_transformation_pipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=30.0,
+            scale_factor=1.5,
+            center_surface=True
+        )
+        assert pipeline_centered.center_surface is True
+        
+        # Test with centering disabled
+        pipeline_not_centered = transformer.create_transformation_pipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=30.0,
+            scale_factor=1.5,
+            center_surface=False
+        )
+        assert pipeline_not_centered.center_surface is False
+        
+        # Test default behavior (should be True)
+        pipeline_default = transformer.create_transformation_pipeline(
+            anchor_lat=40.7128,
+            anchor_lon=-74.0060,
+            rotation_degrees=30.0,
+            scale_factor=1.5
+        )
+        assert pipeline_default.center_surface is True
 
 
 if __name__ == "__main__":

@@ -95,7 +95,7 @@ class VolumeCalculator:
             thicknesses = z_upper - z_lower
             thicknesses = thicknesses[thicknesses > 0]  # Only positive thicknesses
             
-            if len(thicknesses) == 0:
+            if thicknesses is None or thicknesses.size == 0:
                 return ThicknessResult(
                     average_thickness_feet=0.0,
                     min_thickness_feet=0.0,
@@ -156,9 +156,10 @@ def calculate_volume_between_surfaces(
     Raises:
         ValueError: If surfaces have different number of points or invalid data
     """
+    if bottom_surface is None or bottom_surface.size == 0 or top_surface is None or top_surface.size == 0:
+        raise ValueError("Bottom and top surfaces must be non-empty numpy arrays")
     if len(bottom_surface) != len(top_surface):
         raise ValueError("Bottom and top surfaces must have same number of points")
-    
     if len(bottom_surface) < 3:
         logger.warning("Surfaces have fewer than 3 points, returning 0 volume")
         return 0.0

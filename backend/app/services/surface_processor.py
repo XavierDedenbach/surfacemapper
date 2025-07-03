@@ -30,32 +30,132 @@ class SurfaceProcessor:
     def clip_to_boundary(self, vertices: np.ndarray, boundary: List[Tuple[float, float]]) -> np.ndarray:
         """
         Clip surface vertices to the defined analysis boundary
+        
+        Args:
+            vertices: Nx3 numpy array of vertex coordinates
+            boundary: Either:
+                - List of 2 tuples defining rectangle corners: [(min_x, min_y), (max_x, max_y)]
+                - List of 4 tuples defining polygon corners: [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
         """
-        # Validate input
-        if vertices.shape[1] != 3:
-            raise ValueError("Vertices must have 3 columns (x, y, z)")
+        if vertices is None or vertices.size == 0 or vertices.shape[1] != 3:
+            raise ValueError("Vertices must be a non-empty Nx3 numpy array")
         
-        if len(boundary) != 2:
-            raise ValueError("Boundary must be a list of 2 tuples defining rectangle corners")
+        if len(boundary) == 2:
+            # Two-corner format: rectangular boundary
+            min_x, min_y = boundary[0]
+            max_x, max_y = boundary[1]
+            
+            # Filter vertices within boundary
+            mask = (
+                (vertices[:, 0] >= min_x) & (vertices[:, 0] <= max_x) &
+                (vertices[:, 1] >= min_y) & (vertices[:, 1] <= max_y)
+            )
+            
+            if mask is not None and mask.size > 0:
+                return vertices[mask]
+            else:
+                return np.empty((0, 3), dtype=vertices.dtype)
         
-        # Extract boundary coordinates
-        min_x, min_y = boundary[0]
-        max_x, max_y = boundary[1]
+        elif len(boundary) == 4:
+            filtered = self._clip_to_polygon_boundary(vertices, boundary)
+            if filtered is not None and filtered.size > 0:
+                return filtered
+            else:
+                return np.empty((0, 3), dtype=vertices.dtype)
         
-        # Filter vertices within boundary
-        mask = (
-            (vertices[:, 0] >= min_x) & (vertices[:, 0] <= max_x) &
-            (vertices[:, 1] >= min_y) & (vertices[:, 1] <= max_y)
-        )
+        else:
+            raise ValueError("Boundary must be a list of 2 or 4 coordinate tuples")
+    
+    def _clip_to_polygon_boundary(self, vertices: np.ndarray, boundary: List[Tuple[float, float]]) -> np.ndarray:
+        """
+        Clip vertices to a polygon boundary defined by 4 corner points
+        
+        Args:
+            vertices: Nx3 numpy array of vertex coordinates
+            boundary: List of 4 tuples defining polygon corners: [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
+            
+        Returns:
+            Filtered vertices that are inside the polygon boundary
+        """
+        # Convert boundary to numpy array for easier manipulation
+        boundary_array = np.array(boundary)
+        
+        # Filter vertices using point-in-polygon test
+        mask = np.zeros(len(vertices), dtype=bool)
+        for i, vertex in enumerate(vertices):
+            if self._is_point_in_polygon(vertex[:2], boundary_array):
+                mask[i] = True
         
         return vertices[mask]
+    
+    def _is_point_in_polygon(self, point: np.ndarray, polygon: np.ndarray) -> bool:
+        """
+        Robust point-in-polygon test (even-odd rule, with edge/vertex inclusion)
+        Args:
+            point: 2D point [x, y]
+            polygon: Polygon vertices [N, 2]
+        Returns:
+            True if point is inside or on the edge/vertex of the polygon
+        """
+        x, y = point
+        n = len(polygon)
+        inside = False
+        eps = 1e-10
+        for i in range(n):
+            x1, y1 = polygon[i]
+            x2, y2 = polygon[(i + 1) % n]
+            # Check if point is exactly on a vertex
+            if (abs(x - x1) < eps and abs(y - y1) < eps) or (abs(x - x2) < eps and abs(y - y2) < eps):
+                return True
+            # Check if point is exactly on an edge (including horizontal/vertical/diagonal)
+            dx = x2 - x1
+            dy = y2 - y1
+            if abs(dx) < eps and abs(x - x1) < eps and min(y1, y2) - eps <= y <= max(y1, y2) + eps:
+                return True  # Vertical edge
+            if abs(dy) < eps and abs(y - y1) < eps and min(x1, x2) - eps <= x <= max(x1, x2) + eps:
+                return True  # Horizontal edge
+            # General edge
+            if min(y1, y2) - eps < y < max(y1, y2) + eps:
+                if abs(dy) > eps:
+                    t = (y - y1) / dy
+                    if 0.0 - eps <= t <= 1.0 + eps:
+                        x_proj = x1 + t * dx
+                        if abs(x - x_proj) < eps and min(x1, x2) - eps <= x <= max(x1, x2) + eps:
+                            return True  # On edge
+            # Ray casting (even-odd rule)
+            if ((y1 > y) != (y2 > y)):
+                x_intersect = (x2 - x1) * (y - y1) / (y2 - y1 + eps) + x1
+                if x < x_intersect:
+                    inside = not inside
+        return inside
+    
+    def convert_boundary_to_rectangle(self, boundary: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+        """
+        Convert a four-corner boundary to a rectangular boundary (min/max format)
+        
+        Args:
+            boundary: List of 4 coordinate tuples [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
+            
+        Returns:
+            List of 2 coordinate tuples [(min_x, min_y), (max_x, max_y)]
+        """
+        if len(boundary) != 4:
+            raise ValueError("Boundary must have exactly 4 coordinate pairs")
+        
+        # Convert to numpy array for easier manipulation
+        boundary_array = np.array(boundary)
+        
+        # Calculate bounding box
+        min_x, min_y = np.min(boundary_array, axis=0)
+        max_x, max_y = np.max(boundary_array, axis=0)
+        
+        return [(min_x, min_y), (max_x, max_y)]
     
     def generate_base_surface(self, reference_surface: np.ndarray, offset: float) -> np.ndarray:
         """
         Generate a flat base surface with specified vertical offset
         """
-        # Validate input
-        if len(reference_surface) == 0:
+        if len(reference_surface) == 0 or reference_surface is None:
             raise ValueError("Reference surface cannot be empty")
         
         if offset < 0:
@@ -87,7 +187,7 @@ class SurfaceProcessor:
         # Calculate bounding boxes for all surfaces
         bounding_boxes = []
         for surface in surfaces:
-            if len(surface) == 0:
+            if surface is None or surface.size == 0:
                 continue
             
             min_x, min_y = np.min(surface[:, :2], axis=0)
@@ -134,7 +234,7 @@ class SurfaceProcessor:
         if reduction < 0 or reduction > 1:
             raise ValueError("Reduction factor must be between 0.0 and 1.0")
         
-        if faces is not None:
+        if faces is not None and faces.size > 0:
             # PyVista expects faces in a flat array: [n, v0, v1, v2, n, v0, v1, v2, ...]
             flat_faces = []
             for face in faces:
@@ -170,8 +270,11 @@ class SurfaceProcessor:
         # Step 1: Ensure all surfaces have a mesh (triangulate if needed)
         processed_surfaces = []
         for surface_data in surfaces_to_process:
-            if 'faces' not in surface_data or surface_data['faces'] is None:
+            if 'faces' not in surface_data or surface_data['faces'] is None or (isinstance(surface_data['faces'], np.ndarray) and surface_data['faces'].size == 0):
                 vertices = surface_data['vertices']
+                if vertices is None or vertices.size == 0:
+                    processed_surfaces.append({**surface_data, 'faces': np.empty((0, 3))})
+                    continue
                 try:
                     # Use the triangulation function directly
                     delaunay_result = triangulation.create_delaunay_triangulation(vertices[:, :2])
@@ -223,25 +326,25 @@ class SurfaceProcessor:
 
             # Store results in the expected format
             volume_results.append({
-                "layer_name": layer_name,
+                "layer_designation": layer_name,
                 "volume_cubic_yards": volume_result.volume_cubic_yards,
             })
             
             thickness_results.append({
-                "layer_name": layer_name,
+                "layer_designation": layer_name,
                 "average_thickness_feet": thickness_stats.get('average') if thickness_stats.get('average') is not None else 0,
                 "min_thickness_feet": thickness_stats.get('min', 0),
                 "max_thickness_feet": thickness_stats.get('max', 0),
             })
             
             compaction_results.append({
-                "layer_name": layer_name,
+                "layer_designation": layer_name,
                 "compaction_rate_lbs_per_cubic_yard": compaction_rate,
                 "tonnage_used": tonnage_used
             })
 
             analysis_layers.append({
-                "layer_name": layer_name,
+                "layer_designation": layer_name,
                 "volume_cubic_yards": volume_result.volume_cubic_yards,
                 "avg_thickness_feet": thickness_stats.get('average'),
                 "min_thickness_feet": thickness_stats.get('min'),
@@ -252,7 +355,7 @@ class SurfaceProcessor:
         logger.info("--- Analysis Results Summary ---")
         analysis_summary = []
         for i, layer in enumerate(analysis_layers):
-            logger.info(f"  Layer {i}: {layer['layer_name']}")
+            logger.info(f"  Layer {i}: {layer['layer_designation']}")
             logger.info(f"    - Volume: {layer['volume_cubic_yards']:.2f} cubic yards")
             
             avg_thickness = layer.get('avg_thickness_feet')
@@ -264,7 +367,7 @@ class SurfaceProcessor:
             logger.info(f"    - Min Thickness: {layer.get('min_thickness_feet', 0):.2f} feet")
             logger.info(f"    - Max Thickness: {layer.get('max_thickness_feet', 0):.2f} feet")
             analysis_summary.append({
-                'layer_name': layer['layer_name'],
+                'layer_designation': layer['layer_designation'],
                 'volume_cubic_yards': layer['volume_cubic_yards'],
                 'avg_thickness_feet': avg_thickness,
                 'min_thickness_feet': layer.get('min_thickness_feet'),

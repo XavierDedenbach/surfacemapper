@@ -86,7 +86,7 @@ class TestPointQueryIntegration:
                         thickness = None
                     
                     thickness_layers.append({
-                        "layer_name": f"{self.mock_results['surface_names'][i]} to {self.mock_results['surface_names'][i+1]}",
+                        "layer_designation": f"{self.mock_results['surface_names'][i]} to {self.mock_results['surface_names'][i+1]}",
                         "thickness_feet": thickness
                     })
                 

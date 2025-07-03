@@ -173,7 +173,7 @@ def calculate_thickness_between_surfaces(
         setattr(lower_tin, 'z_values', lower_surface_points[:, 2])
         
         # Generate sample points if not provided
-        if sample_points is None:
+        if sample_points is None or sample_points.size == 0:
             # Combine boundaries of both surfaces
             combined_boundary = np.vstack([upper_surface_points[:, :2], lower_surface_points[:, :2]])
             
@@ -510,31 +510,34 @@ def calculate_thickness_statistics(thicknesses: np.ndarray, invalid_points: Opti
                 f"They will be excluded from the average. Points: {invalid_points}"
             )
 
+        # Ensure thicknesses is a 1D array
+        if thicknesses.ndim > 1:
+            thicknesses = thicknesses.flatten()
+        
+        total_count = len(thicknesses)
+        
         # Remove NaN and infinite values before calculation
         valid_thicknesses = thicknesses[np.isfinite(thicknesses)]
+        valid_count = len(valid_thicknesses)
         
-        if valid_thicknesses.size == 0:
+        if valid_count == 0:
             return {
                 'min': np.nan,
                 'max': np.nan,
-                'average': np.nan,
+                'mean': np.nan,
                 'median': np.nan,
                 'std': np.nan,
-                'count': 0,
-                'valid_count': 0
+                'count': total_count,  # Total count including NaN values
+                'valid_count': valid_count
             }
-        
-        total_count = len(thicknesses)
-        # Remove NaN values
-        valid_count = len(valid_thicknesses)
         
         stats = {
             'min': np.min(valid_thicknesses),
             'max': np.max(valid_thicknesses),
-            'average': np.mean(valid_thicknesses),
+            'mean': np.mean(valid_thicknesses),
             'median': np.median(valid_thicknesses),
             'std': np.std(valid_thicknesses),
-            'count': total_count,
+            'count': total_count,  # Total count including NaN values
             'valid_count': valid_count
         }
         
@@ -545,10 +548,10 @@ def calculate_thickness_statistics(thicknesses: np.ndarray, invalid_points: Opti
         return {
             'min': np.nan,
             'max': np.nan,
-            'average': np.nan,
+            'mean': np.nan,
             'median': np.nan,
             'std': np.nan,
-            'count': 0,
+            'count': len(thicknesses) if hasattr(thicknesses, '__len__') else 0,  # Preserve total count
             'valid_count': 0
         }
 

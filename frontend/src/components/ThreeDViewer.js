@@ -279,25 +279,25 @@ const ThreeDViewer = ({
     return meshes;
   }
 
-  const handleMouseMove = (event) => {
+    const handleMouseMove = (event) => {
     console.log('ThreeDViewer: handleMouseMove event fired');
-    const rect = mountRef.current.getBoundingClientRect();
-    mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      const rect = mountRef.current.getBoundingClientRect();
+      mouseRef.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouseRef.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-    // Raycasting for point analysis
-    if (cameraRef.current) {
-      raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
-    } else {
-      return; // Camera not ready
-    }
+      // Raycasting for point analysis
+      if (cameraRef.current) {
+        raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+      } else {
+        return; // Camera not ready
+      }
 
     // Use helper to get all meshes in the scene
     const meshes = getAllMeshes(sceneRef.current);
     const intersects = raycasterRef.current.intersectObjects(meshes);
 
-    if (intersects.length > 0) {
-      const point = intersects[0].point;
+      if (intersects.length > 0) {
+        const point = intersects[0].point;
       // Debug log for intersection
       console.log('Raycast intersection found:', point.x, point.y, point.z, event.clientX - rect.left, event.clientY - rect.top);
       // Provide both 3D and 2D mouse position (relative to container)

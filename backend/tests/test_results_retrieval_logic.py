@@ -14,9 +14,9 @@ class TestResultsRetrievalLogic:
         """Test results formatting validation logic"""
         # Test valid results structure
         valid_results = {
-            "volume_results": [{"layer_name": "Test", "volume_cubic_yards": 100.0}],
-            "thickness_results": [{"layer_name": "Test", "average_thickness_feet": 2.0}],
-            "compaction_rates": [{"layer_name": "Test", "compaction_rate_lbs_per_cubic_yard": 3000.0}],
+            "volume_results": [{"layer_designation": "Test", "volume_cubic_yards": 100.0}],
+            "thickness_results": [{"layer_designation": "Test", "average_thickness_feet": 2.0}],
+            "compaction_rates": [{"layer_designation": "Test", "compaction_rate_lbs_per_cubic_yard": 3000.0}],
             "analysis_metadata": {"status": "completed"}
         }
         
@@ -69,9 +69,9 @@ class TestResultsRetrievalLogic:
     def test_partial_results_filtering(self):
         """Test partial results filtering logic"""
         complete_results = {
-            "volume_results": [{"layer_name": "Test", "volume_cubic_yards": 100.0}],
-            "thickness_results": [{"layer_name": "Test", "average_thickness_feet": 2.0}],
-            "compaction_rates": [{"layer_name": "Test", "compaction_rate_lbs_per_cubic_yard": 3000.0}],
+            "volume_results": [{"layer_designation": "Test", "volume_cubic_yards": 100.0}],
+            "thickness_results": [{"layer_designation": "Test", "average_thickness_feet": 2.0}],
+            "compaction_rates": [{"layer_designation": "Test", "compaction_rate_lbs_per_cubic_yard": 3000.0}],
             "analysis_metadata": {"status": "completed"}
         }
         
@@ -124,7 +124,7 @@ class TestResultsRetrievalLogic:
         """Test result caching logic"""
         # Simulate cached results
         cached_results = {
-            "volume_results": [{"layer_name": "Test", "volume_cubic_yards": 100.0}],
+            "volume_results": [{"layer_designation": "Test", "volume_cubic_yards": 100.0}],
             "analysis_metadata": {"status": "completed", "cached": True}
         }
         
@@ -146,14 +146,14 @@ class TestResultsRetrievalLogic:
         complete_results = {
             "volume_results": [
                 {
-                    "layer_name": "Surface 0 to Surface 1",
+                    "layer_designation": "Surface 0 to Surface 1",
                     "volume_cubic_yards": 1250.5,
                     "confidence_interval": [1240.2, 1260.8]
                 }
             ],
             "thickness_results": [
                 {
-                    "layer_name": "Surface 0 to Surface 1",
+                    "layer_designation": "Surface 0 to Surface 1",
                     "average_thickness_feet": 2.5,
                     "min_thickness_feet": 1.0,
                     "max_thickness_feet": 4.0,
@@ -162,7 +162,7 @@ class TestResultsRetrievalLogic:
             ],
             "compaction_rates": [
                 {
-                    "layer_name": "Surface 0 to Surface 1",
+                    "layer_designation": "Surface 0 to Surface 1",
                     "compaction_rate_lbs_per_cubic_yard": 3200.0,
                     "tonnage_input": 2000.0
                 }
@@ -176,7 +176,7 @@ class TestResultsRetrievalLogic:
         
         # Validate volume results
         for volume_result in complete_results["volume_results"]:
-            assert "layer_name" in volume_result
+            assert "layer_designation" in volume_result
             assert "volume_cubic_yards" in volume_result
             assert "confidence_interval" in volume_result
             assert isinstance(volume_result["volume_cubic_yards"], (int, float))
@@ -184,7 +184,7 @@ class TestResultsRetrievalLogic:
         
         # Validate thickness results
         for thickness_result in complete_results["thickness_results"]:
-            assert "layer_name" in thickness_result
+            assert "layer_designation" in thickness_result
             assert "average_thickness_feet" in thickness_result
             assert "min_thickness_feet" in thickness_result
             assert "max_thickness_feet" in thickness_result
@@ -193,7 +193,7 @@ class TestResultsRetrievalLogic:
         
         # Validate compaction rates
         for compaction_result in complete_results["compaction_rates"]:
-            assert "layer_name" in compaction_result
+            assert "layer_designation" in compaction_result
             assert "compaction_rate_lbs_per_cubic_yard" in compaction_result
             assert "tonnage_input" in compaction_result
         

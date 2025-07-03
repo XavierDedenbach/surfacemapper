@@ -11,7 +11,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
   const compactionData = analysisResult?.compaction_results || [];
 
   const [activeTab, setActiveTab] = useState('summary');
-  const [sortField, setSortField] = useState('layer_name');
+  const [sortField, setSortField] = useState('layer_designation');
   const [sortDirection, setSortDirection] = useState('asc');
 
   // Handle sort with validation
@@ -59,7 +59,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
   };
 
   const getTonnageForLayer = (layerName) => {
-    const tonnageInfo = tonnages.find(t => t.layer_name === layerName);
+    const tonnageInfo = tonnages.find(t => t.layer_designation === layerName);
     return tonnageInfo ? tonnageInfo.tonnage : 'N/A';
   };
 
@@ -69,7 +69,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
       <table className="data-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+            <th onClick={() => handleSort('layer_designation')}>Layer Name</th>
             <th onClick={() => handleSort('volume_cubic_yards')}>Volume (cubic yards)</th>
           </tr>
         </thead>
@@ -78,7 +78,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
             <tr 
               key={index}
             >
-              <td>{result.layer_name}</td>
+              <td>{result.layer_designation}</td>
               <td>{formatNumber(result.volume_cubic_yards)}</td>
             </tr>
           ))}
@@ -93,7 +93,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
       <table className="data-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+            <th onClick={() => handleSort('layer_designation')}>Layer Name</th>
             <th onClick={() => handleSort('average_thickness_feet')}>Average (feet)</th>
             <th onClick={() => handleSort('min_thickness_feet')}>Minimum (feet)</th>
             <th onClick={() => handleSort('max_thickness_feet')}>Maximum (feet)</th>
@@ -104,7 +104,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
             <tr 
               key={index}
             >
-              <td>{layer.layer_name}</td>
+              <td>{layer.layer_designation}</td>
               <td>{formatNumber(layer.average_thickness_feet, 3)}</td>
               <td>{formatNumber(layer.min_thickness_feet, 3)}</td>
               <td>{formatNumber(layer.max_thickness_feet, 3)}</td>
@@ -121,7 +121,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
       <table className="data-table">
         <thead>
           <tr>
-            <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+            <th onClick={() => handleSort('layer_designation')}>Layer Name</th>
             <th onClick={() => handleSort('compaction_rate_lbs_per_cubic_yard')}>Compaction Rate (lbs/cubic yard)</th>
             <th onClick={() => handleSort('tonnage_used')}>Tonnage Used (tons)</th>
           </tr>
@@ -131,7 +131,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
             <tr 
               key={index}
             >
-              <td>{result.layer_name}</td>
+              <td>{result.layer_designation}</td>
               <td>{
                 result.compaction_rate_lbs_per_cubic_yard === null || result.compaction_rate_lbs_per_cubic_yard === undefined
                   ? 'No data'
@@ -152,7 +152,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
   const renderSummary = () => {
     const summaryData = analysisResult?.analysis_summary || [];
     const compactionMap = (analysisResult?.compaction_results || []).reduce((acc, c) => {
-      acc[c.layer_name] = c;
+      acc[c.layer_designation] = c;
       return acc;
     }, {});
 
@@ -162,7 +162,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
         <table className="data-table">
           <thead>
             <tr>
-              <th onClick={() => handleSort('layer_name')}>Layer Name</th>
+              <th onClick={() => handleSort('layer_designation')}>Layer Name</th>
               <th onClick={() => handleSort('volume_cubic_yards')}>Volume (Cubic Yards)</th>
               <th onClick={() => handleSort('avg_thickness_feet')}>Avg. Thickness (ft)</th>
               <th onClick={() => handleSort('compaction_rate_lbs_per_cubic_yard')}>Compaction (lbs/cu.yd)</th>
@@ -171,12 +171,12 @@ const DataTable = ({ analysisResult, tonnages }) => {
           </thead>
           <tbody>
             {sortData(summaryData).map((item, index) => {
-              const comp = compactionMap[item.layer_name] || {};
+              const comp = compactionMap[item.layer_designation] || {};
               return (
-                <tr key={index}>
-                  <td>{item.layer_name}</td>
-                  <td>{formatNumber(item.volume_cubic_yards)}</td>
-                  <td>{formatNumber(item.avg_thickness_feet, 3)}</td>
+              <tr key={index}>
+                  <td>{item.layer_designation}</td>
+                <td>{formatNumber(item.volume_cubic_yards)}</td>
+                <td>{formatNumber(item.avg_thickness_feet, 3)}</td>
                   <td>{
                     comp.compaction_rate_lbs_per_cubic_yard === null || comp.compaction_rate_lbs_per_cubic_yard === undefined
                       ? 'No data'
@@ -187,7 +187,7 @@ const DataTable = ({ analysisResult, tonnages }) => {
                       ? 'No data'
                       : formatNumber(comp.tonnage_used, 2)
                   }</td>
-                </tr>
+              </tr>
               );
             })}
           </tbody>

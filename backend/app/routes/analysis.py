@@ -186,7 +186,7 @@ async def point_query(
     # Get TINs and metadata
     surface_tins = results.get("surface_tins")
     surface_names = results.get("surface_names")
-    if not surface_tins or not surface_names:
+    if surface_tins is None or len(surface_tins) == 0 or surface_names is None or len(surface_names) == 0:
         raise HTTPException(status_code=500, detail="Surface TINs not available")
 
     # Get georeference metadata
@@ -228,7 +228,7 @@ async def point_query(
         else:
             thickness = upper_z - lower_z
         thickness_layers.append({
-            "layer_name": f"{surface_names[i]} to {surface_names[i+1]}",
+            "layer_designation": f"{surface_names[i]} to {surface_names[i+1]}",
             "thickness_feet": thickness
         })
 
@@ -265,7 +265,7 @@ async def batch_point_query(
 
     surface_tins = results.get("surface_tins")
     surface_names = results.get("surface_names")
-    if not surface_tins or not surface_names:
+    if surface_tins is None or len(surface_tins) == 0 or surface_names is None or len(surface_names) == 0:
         raise HTTPException(status_code=500, detail="Surface TINs not available")
 
     # Prepare points array (transform if needed)
@@ -302,7 +302,7 @@ async def batch_point_query(
             else:
                 thickness = upper_z - lower_z
             thickness_layers.append({
-                "layer_name": f"{surface_names[i]} to {surface_names[i+1]}",
+                "layer_designation": f"{surface_names[i]} to {surface_names[i+1]}",
                 "thickness_feet": thickness
             })
         results_list.append({
@@ -345,7 +345,7 @@ async def get_3d_visualization_data(
         
         # Get surface data
         surface_tins = results.get("surface_tins")
-        if not surface_tins or surface_id >= len(surface_tins):
+        if surface_tins is None or len(surface_tins) == 0 or surface_id >= len(surface_tins):
             raise HTTPException(status_code=404, detail="Surface not found")
         
         tin = surface_tins[surface_id]
@@ -417,7 +417,16 @@ def _simplify_mesh(vertices, faces, level_of_detail, max_vertices=None, preserve
     """
     Simplify mesh based on level of detail and parameters
     """
-    if not vertices or not faces:
+    # Patch: Use explicit checks for numpy arrays
+    if vertices is None or faces is None:
+        return vertices, faces
+    if isinstance(vertices, np.ndarray) and vertices.size == 0:
+        return vertices, faces
+    if isinstance(faces, np.ndarray) and faces.size == 0:
+        return vertices, faces
+    if isinstance(vertices, list) and len(vertices) == 0:
+        return vertices, faces
+    if isinstance(faces, list) and len(faces) == 0:
         return vertices, faces
     
     # Determine target vertex count based on level of detail
@@ -657,17 +666,21 @@ async def thickness_grid_csv(
     def csv_generator():
         output = io.StringIO()
         writer = csv.writer(output)
-        # Write header with lat/lon
-        writer.writerow(["x", "y", "lat", "lon"] + layer_names)
+        # Write header with local x, y, lat, lon
+        writer.writerow(["local_x_feet", "local_y_feet", "lat", "lon"] + layer_names)
         yield output.getvalue()
         output.seek(0)
         output.truncate(0)
         for pt in grid_points:
             # Compute lat/lon from UTM (x, y)
-            print(f"[DEBUG] CSV UTM input: x={pt[0]}, y={pt[1]}")
             lon, lat = utm_to_wgs84.transform(pt[0], pt[1])
-            print(f"[DEBUG] CSV WGS84 output: lon={lon}, lat={lat}")
-            row = [pt[0], pt[1], lat, lon]
+            # Inverse transform: UTM -> local feet
+            utm_point = np.array([[pt[0], pt[1], 0.0]])
+            local_point_m = pipeline.inverse_transform(utm_point)[0]
+            FEET_PER_METER = 3.280839895
+            local_x_feet = local_point_m[0] * FEET_PER_METER
+            local_y_feet = local_point_m[1] * FEET_PER_METER
+            row = [local_x_feet, local_y_feet, lat, lon]
             for i in range(len(tins)-1):
                 upper_z = thickness_calculator._interpolate_z_at_point(pt, tins[i+1])
                 lower_z = thickness_calculator._interpolate_z_at_point(pt, tins[i])
