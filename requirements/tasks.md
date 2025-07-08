@@ -4234,48 +4234,675 @@ Refactor the geospatial processing pipeline so that all mesh operations (clippin
 - Output: Table or diagram showing current workflow and coordinate system at each stage.
 
 #### 11.2.0 Refactor Input Handling to Project Mesh and Boundary Together
-##### 11.2.1 (Test First): Write Tests for Input Projection Utility
-- Write tests to ensure that both mesh and boundary are projected to the same UTM zone before any mesh operation.
-- Test with various input types (SHP, PLY) and edge cases (crossing UTM zones, invalid input).
-- Acceptance: All tests pass, projection is consistent and robust.
-##### 11.2.2 (Implementation): Implement Input Projection Utility
-- As soon as a surface (mesh) and its boundary are loaded, project both to the same UTM zone (or local metric projection) before any further processing.
-- Output: Utility function(s) for projecting both mesh and boundary together.
+
+##### 11.2.1 (Test First): Create Test Suite for Projection System Refactor
+**Objective:** Create comprehensive test suite to validate that all mesh operations are performed in UTM coordinates.
+
+**Files to Create:**
+- `backend/tests/test_projection_system_refactor.py`
+
+**Test Cases to Implement:**
+1. **Test SHP Workflow Projection Order:**
+   - Load SHP file in WGS84
+   - Project both mesh and boundary to UTM together
+   - Verify clipping is performed in UTM
+   - Verify triangulation is performed in UTM
+   - Verify area/volume calculations are performed in UTM
+
+2. **Test PLY Workflow Projection Order:**
+   - Load PLY file (already in UTM)
+   - Project boundary to UTM if needed
+   - Verify clipping is performed in UTM
+   - Verify triangulation is performed in UTM
+   - Verify area/volume calculations are performed in UTM
+
+3. **Test Coordinate System Validation:**
+   - Verify no mesh operations are performed in WGS84
+   - Verify all area/volume calculations receive UTM coordinates
+   - Verify all triangulation operations receive UTM coordinates
+
+4. **Test Surface Area Consistency:**
+   - Calculate surface area in WGS84 before projection
+   - Calculate surface area in UTM after projection
+   - Verify areas are consistent (accounting for projection distortion)
+
+**Validation Criteria:**
+- All tests pass
+- No mesh operations performed in WGS84 coordinates
+- Surface areas are consistent between coordinate systems
+- Volume calculations are accurate
+
+##### 11.2.2 (Implementation): Refactor Analysis Executor to Project Mesh and Boundary Together
+**Objective:** Modify analysis executor to project both mesh and boundary to UTM before any mesh operations.
+
+**Files to Edit:**
+- `backend/app/services/analysis_executor.py`
+
+**Specific Changes:**
+
+1. **Modify `_execute_analysis_logic` method (lines 88-400):**
+   - **Remove lines 240-250:** SHP clipping in WGS84
+   - **Remove lines 252-253:** SHP UTM conversion after clipping
+   - **Remove lines 255-262:** SHP retriangulation in UTM
+   - **Add new logic after line 239:**
+     ```python
+     # Project both mesh and boundary to UTM before any mesh operations
+     if surface.get('vertices') is not None and len(surface['vertices']) > 0:
+         print(f"DEBUG: Projecting mesh and boundary to UTM together")
+         # Project vertices to UTM
+         utm_vertices = self._convert_wgs84_to_utm(surface['vertices'])
+         surface['vertices'] = utm_vertices
+         
+         # Project boundary to UTM
+         utm_boundary = self._convert_boundary_wgs84_to_utm(boundary_lon_lat)
+         
+         # Now clip in UTM coordinates
+         print(f"DEBUG: Clipping in UTM coordinates")
+         if surface.get('faces') is not None and len(surface['faces']) > 0:
+             clipped_utm_vertices, clipped_utm_faces = self.surface_processor.clip_to_boundary(
+                 utm_vertices, utm_boundary, surface['faces']
+             )
+             surface['vertices'] = clipped_utm_vertices
+             surface['faces'] = clipped_utm_faces
+         else:
+             # No faces available, clip vertices only
+             clipped_utm_vertices = self.surface_processor.clip_to_boundary(
+                 utm_vertices, utm_boundary
+             )
+             surface['vertices'] = clipped_utm_vertices
+     ```
+
+2. **Add new method `_convert_boundary_wgs84_to_utm` (after line 753):**
+   ```python
+   def _convert_boundary_wgs84_to_utm(self, boundary_wgs84: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+       """
+       Convert boundary coordinates from WGS84 to UTM.
+       
+       Args:
+           boundary_wgs84: List of (lon, lat) tuples in WGS84
+           
+       Returns:
+           List of (x, y) tuples in UTM coordinates
+       """
+       if not boundary_wgs84 or len(boundary_wgs84) < 3:
+           return boundary_wgs84
+       
+       utm_boundary = []
+       for lon, lat in boundary_wgs84:
+           utm_x, utm_y = self._convert_wgs84_to_utm_single(lon, lat)
+           utm_boundary.append((utm_x, utm_y))
+       
+       return utm_boundary
+   ```
+
+3. **Add new method `_convert_wgs84_to_utm_single` (after line 753):**
+   ```python
+   def _convert_wgs84_to_utm_single(self, lon: float, lat: float) -> Tuple[float, float]:
+       """
+       Convert single WGS84 coordinate to UTM.
+       
+       Args:
+           lon: Longitude in degrees
+           lat: Latitude in degrees
+           
+       Returns:
+           Tuple of (utm_x, utm_y) in meters
+       """
+       transformer = Transformer.from_crs("EPSG:4326", "EPSG:32617", always_xy=True)
+       utm_x, utm_y = transformer.transform(lon, lat)
+       return (utm_x, utm_y)
+   ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- SHP workflow projects mesh and boundary together to UTM
+- No mesh operations performed in WGS84
+- Clipping and triangulation performed in UTM
+
+##### 11.2.3 (Test First): Create Tests for Updated Analysis Executor
+**Objective:** Create tests to validate the refactored analysis executor projection logic.
+
+**Files to Create:**
+- `backend/tests/test_analysis_executor_projection.py`
+
+**Test Cases to Implement:**
+1. **Test SHP Workflow Projection Order:**
+   - Mock SHP surface with WGS84 coordinates
+   - Mock boundary with WGS84 coordinates
+   - Verify both are projected to UTM together
+   - Verify clipping is performed in UTM
+   - Verify triangulation is performed in UTM
+
+2. **Test PLY Workflow (Already in UTM):**
+   - Mock PLY surface with UTM coordinates
+   - Mock boundary with WGS84 coordinates
+   - Verify boundary is projected to UTM
+   - Verify clipping is performed in UTM
+   - Verify no unnecessary projection of mesh
+
+3. **Test Boundary Projection:**
+   - Test `_convert_boundary_wgs84_to_utm` with various boundary shapes
+   - Verify boundary coordinates are correctly converted
+   - Verify boundary integrity is maintained
+
+4. **Test Single Coordinate Projection:**
+   - Test `_convert_wgs84_to_utm_single` with known coordinates
+   - Verify UTM coordinates are correct
+   - Verify projection is consistent
+
+**Validation Criteria:**
+- All tests pass
+- Projection order is correct
+- No mesh operations in WGS84
+- Boundary projection is accurate
 
 #### 11.3.0 Update Clipping and Triangulation to Operate Only in UTM
-##### 11.3.1 (Test First): Write Tests for UTM-Only Mesh Operations
-- Write tests to ensure that all mesh clipping and triangulation are performed in UTM coordinates only.
-- Test with known geometries and compare results to expected metric outputs.
-- Acceptance: No mesh operation is performed in WGS84, all tests pass.
-##### 11.3.2 (Implementation): Refactor Mesh Operations to UTM
-- Refactor all mesh clipping and triangulation code to operate exclusively in UTM coordinates.
-- Remove any mesh operation (clipping, triangulation) in WGS84.
+##### 11.3.1 (Test First): Create Tests for Updated Surface Processor
+**Objective:** Create tests to validate the updated surface processor UTM-only operations.
+
+**Files to Create:**
+- `backend/tests/test_surface_processor_utm.py`
+
+**Test Cases to Implement:**
+1. **Test Coordinate System Validation:**
+   - Test with UTM coordinates (should pass)
+   - Test with WGS84 coordinates (should log warning)
+   - Test with mixed coordinates (should log warning)
+
+2. **Test Clipping with UTM Coordinates:**
+   - Create test mesh in UTM coordinates
+   - Create test boundary in UTM coordinates
+   - Verify clipping works correctly
+   - Verify no coordinate system errors
+
+3. **Test Triangulation with UTM Coordinates:**
+   - Create test vertices in UTM coordinates
+   - Create test boundary in UTM coordinates
+   - Verify triangulation works correctly
+   - Verify no coordinate system errors
+
+4. **Test Error Handling:**
+   - Test with invalid coordinates
+   - Test with empty vertices
+   - Test with invalid boundaries
+   - Verify appropriate error messages
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- No mesh operations in WGS84
+- Appropriate warnings are logged
+
+##### 11.3.2 (Implementation): Update Surface Processor to Handle UTM-Only Operations
+**Objective:** Modify surface processor to ensure all operations are performed in UTM coordinates.
+
+**Files to Edit:**
+- `backend/app/services/surface_processor.py`
+
+**Specific Changes:**
+
+1. **Modify `clip_to_boundary` method (lines 33-100):**
+   - **Add coordinate system validation at line 35:**
+     ```python
+     def clip_to_boundary(self, vertices: np.ndarray, boundary: list, faces: Optional[np.ndarray] = None) -> tuple:
+         """
+         Clip vertices (and optionally faces) to a boundary.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             vertices: 3D vertices in UTM coordinates
+             boundary: Boundary polygon in UTM coordinates
+             faces: Optional face indices
+             
+         Returns:
+             Tuple of (clipped_vertices, clipped_faces)
+         """
+         # Validate coordinate system (UTM coordinates should be in meters, not degrees)
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords > 180) or np.any(y_coords > 90):
+                 # Coordinates are likely in UTM (meters), which is correct
+                 pass
+             else:
+                 logger.warning("Vertices appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+2. **Modify `clip_mesh_to_boundary` method (lines 33-273):**
+   - **Add coordinate system validation at line 35:**
+     ```python
+     def clip_mesh_to_boundary(self, vertices: np.ndarray, faces: np.ndarray, boundary: list) -> tuple:
+         """
+         Clip a surface mesh (vertices, faces) to a polygon boundary.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             vertices: 3D vertices in UTM coordinates
+             faces: Face indices
+             boundary: Boundary polygon in UTM coordinates
+             
+         Returns:
+             Tuple of (clipped_vertices, clipped_faces)
+         """
+         # Validate coordinate system
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords > 180) or np.any(y_coords > 90):
+                 # Coordinates are likely in UTM (meters), which is correct
+                 pass
+             else:
+                 logger.warning("Vertices appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+3. **Modify `create_constrained_triangulation` method (lines 685-883):**
+   - **Add coordinate system validation at line 687:**
+     ```python
+     def create_constrained_triangulation(self, vertices: np.ndarray, boundary_polygon) -> tuple:
+         """
+         Create a triangulated mesh constrained to the boundary polygon using Triangle library.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             vertices: 3D vertices in UTM coordinates
+             boundary_polygon: Boundary polygon in UTM coordinates
+             
+         Returns:
+             Tuple of (vertices, faces) where all faces are inside the boundary
+         """
+         # Validate coordinate system
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords > 180) or np.any(y_coords > 90):
+                 # Coordinates are likely in UTM (meters), which is correct
+                 pass
+             else:
+                 logger.warning("Vertices appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works correctly
+- No mesh operations performed in WGS84
+- Warnings are logged for incorrect coordinate systems
 
 #### 11.4.0 Update Area, Volume, and Thickness Calculations
-##### 11.4.1 (Test First): Write Tests for Metric Calculations
-- Write tests to ensure all area, volume, and thickness calculations are performed in UTM (meters).
-- Compare results to known metric values and ensure no calculation uses WGS84 degrees.
-- Acceptance: All calculations are in metric units, all tests pass.
-##### 11.4.2 (Implementation): Refactor Calculations to Metric Only
-- Ensure all area, volume, and thickness calculations are performed in UTM (meters).
-- Remove any calculation logic that uses WGS84 (degrees) directly.
+##### 11.4.1 (Test First): Create Tests for Updated Volume Calculator
+**Objective:** Create tests to validate the updated volume calculator UTM validation.
+
+**Files to Create:**
+- `backend/tests/test_volume_calculator_utm.py`
+
+**Test Cases to Implement:**
+1. **Test Volume Calculation with UTM Coordinates:**
+   - Create test surfaces in UTM coordinates
+   - Verify volume calculation works correctly
+   - Verify no coordinate system warnings
+
+2. **Test Volume Calculation with WGS84 Coordinates:**
+   - Create test surfaces in WGS84 coordinates
+   - Verify warning is logged
+   - Verify calculation still works (with warning)
+
+3. **Test Surface Area Calculation with UTM Coordinates:**
+   - Create test surface in UTM coordinates
+   - Verify area calculation works correctly
+   - Verify no coordinate system warnings
+
+4. **Test Surface Area Calculation with WGS84 Coordinates:**
+   - Create test surface in WGS84 coordinates
+   - Verify warning is logged
+   - Verify calculation still works (with warning)
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- Appropriate warnings are logged
+- Calculations still work with warnings
+
+##### 11.4.2 (Implementation): Update Volume Calculator to Validate UTM Input
+**Objective:** Modify volume calculator to ensure all calculations receive UTM coordinates.
+
+**Files to Edit:**
+- `backend/app/services/volume_calculator.py`
+
+**Specific Changes:**
+
+1. **Modify `calculate_volume_between_surfaces` function (lines 148-200):**
+   - **Add coordinate system validation at line 150:**
+     ```python
+     def calculate_volume_between_surfaces(
+         bottom_surface: np.ndarray, 
+         top_surface: np.ndarray,
+         method: str = "pyvista"
+     ) -> float:
+         """
+         Calculate volume between two surfaces using PyVista mesh operations.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             bottom_surface: 3D points representing bottom surface [N, 3] in UTM
+             top_surface: 3D points representing top surface [M, 3] in UTM
+             method: Calculation method ("pyvista" or "prism")
+             
+         Returns:
+             Volume in cubic units (same units as input coordinates)
+             
+         Raises:
+             ValueError: If surfaces are invalid or in wrong coordinate system
+         """
+         # Validate coordinate system
+         for surface_name, surface in [("bottom_surface", bottom_surface), ("top_surface", top_surface)]:
+             if surface is not None and len(surface) > 0:
+                 x_coords = surface[:, 0]
+                 y_coords = surface[:, 1]
+                 if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                     logger.warning(f"{surface_name} appears to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+2. **Modify `calculate_surface_area` function (lines 644-665):**
+   - **Add coordinate system validation at line 646:**
+     ```python
+     def calculate_surface_area(surface_points: np.ndarray) -> float:
+         """
+         Calculate approximate surface area of a point cloud surface.
+         Assumes coordinates are in UTM (meters).
+         
+         Args:
+             surface_points: 3D points representing surface [N, 3] in UTM
+             
+         Returns:
+             Approximate surface area in square meters
+         """
+         # Validate coordinate system
+         if surface_points is not None and len(surface_points) > 0:
+             x_coords = surface_points[:, 0]
+             y_coords = surface_points[:, 1]
+             if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                 logger.warning("Surface points appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+3. **Modify `calculate_real_surface_area` function (lines 717-748):**
+   - **Add coordinate system validation at line 719:**
+     ```python
+     def calculate_real_surface_area(surface_points: np.ndarray) -> float:
+         """
+         Calculate real surface area using triangulation.
+         Assumes coordinates are in UTM (meters).
+         
+         Args:
+             surface_points: 3D points representing surface [N, 3] in UTM
+             
+         Returns:
+             Real surface area in square meters
+         """
+         # Validate coordinate system
+         if surface_points is not None and len(surface_points) > 0:
+             x_coords = surface_points[:, 0]
+             y_coords = surface_points[:, 1]
+             if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                 logger.warning("Surface points appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works
+- No volume calculations performed in WGS84
+- Appropriate warnings are logged
 
 #### 11.5.0 Update Visualization Pipeline
-##### 11.5.1 (Test First): Write Tests for Visualization Data Consistency
-- Write tests to ensure all data sent to the frontend for visualization is in UTM (or local metric) coordinates.
-- Validate that visualization is accurate and artifact-free.
-- Acceptance: Visualization matches expected metric geometry, all tests pass.
-##### 11.5.2 (Implementation): Refactor Visualization Data Pipeline
-- Ensure all data sent to the frontend for visualization is in UTM (or local metric) coordinates.
-- Update any frontend code that assumes WGS84 input.
+##### 11.5.1 (Test First): Create Tests for Updated Visualization Components
+**Objective:** Create tests to validate the updated visualization components UTM validation.
+
+**Files to Create:**
+- `frontend/src/components/__tests__/ThreeDViewer.test.js`
+
+**Test Cases to Implement:**
+1. **Test Visualization with UTM Coordinates:**
+   - Create test surfaces with UTM coordinates
+   - Verify visualization works correctly
+   - Verify no coordinate system warnings
+
+2. **Test Visualization with WGS84 Coordinates:**
+   - Create test surfaces with WGS84 coordinates
+   - Verify warning is logged
+   - Verify visualization still works
+
+3. **Test Coordinate System Validation:**
+   - Test `validateUTMCoordinates` with UTM coordinates
+   - Test `validateUTMCoordinates` with WGS84 coordinates
+   - Verify validation works correctly
+
+4. **Test Error Handling:**
+   - Test with invalid surface data
+   - Test with empty surfaces
+   - Test with missing vertices
+   - Verify appropriate error messages
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- Appropriate warnings are logged
+- Visualization still works correctly
+
+##### 11.5.2 (Implementation): Update Visualization Components to Handle UTM Coordinates
+**Objective:** Modify frontend visualization components to handle UTM coordinates correctly.
+
+**Files to Edit:**
+- `frontend/src/components/ThreeDViewer.js`
+
+**Specific Changes:**
+
+1. **Modify surface rendering logic (lines 150-200):**
+   - **Add coordinate system validation at line 150:**
+     ```javascript
+     // Create surface meshes
+     surfaces.forEach((surface, index) => {
+       if (!surface.vertices || surface.vertices.length === 0) return;
+
+       // Validate coordinate system (UTM coordinates should be in meters)
+       const xCoords = surface.vertices.map(v => v[0]);
+       const yCoords = surface.vertices.map(v => v[1]);
+       const maxX = Math.max(...xCoords);
+       const maxY = Math.max(...yCoords);
+       
+       if (maxX <= 180 && maxY <= 90) {
+         console.warn(`Surface ${index} appears to be in WGS84 coordinates. Expected UTM coordinates.`);
+       }
+
+       // Create geometry from vertices
+       const geometry = new THREE.BufferGeometry();
+       const vertices = new Float32Array(surface.vertices.flat());
+       geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+     ```
+
+2. **Add coordinate system validation function (after line 343):**
+   ```javascript
+   /**
+    * Validate that coordinates are in UTM (meters) rather than WGS84 (degrees)
+    * @param {Array} vertices - Array of 3D vertices
+    * @returns {boolean} - True if coordinates appear to be in UTM
+    */
+   const validateUTMCoordinates = (vertices) => {
+     if (!vertices || vertices.length === 0) return true;
+     
+     const xCoords = vertices.map(v => v[0]);
+     const yCoords = vertices.map(v => v[1]);
+     const maxX = Math.max(...xCoords);
+     const maxY = Math.max(...yCoords);
+     
+     // UTM coordinates should be in meters, typically > 1000
+     // WGS84 coordinates are in degrees, typically < 180
+     return maxX > 180 || maxY > 90;
+   };
+   ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works
+- Warnings are logged for WGS84 coordinates
+- Visualization still works correctly
 
 #### 11.6.0 Add Robustness and Consistency Checks
-##### 11.6.1 (Test First): Write Tests and Assertions for Projection Consistency
-- Write tests and assertions to ensure that no mesh operation is performed in WGS84.
-- Add checks to verify that all surfaces and boundaries are in the same projection before any operation.
-- Acceptance: Automated tests and runtime assertions pass.
-##### 11.6.2 (Implementation): Add Consistency Checks
-- Implement runtime assertions and checks for projection consistency.
+##### 11.6.1 (Test First): Create Tests for Updated SHP Parser
+**Objective:** Create tests to validate the updated SHP parser UTM projection.
+
+**Files to Create:**
+- `backend/tests/test_shp_parser_utm.py`
+
+**Test Cases to Implement:**
+1. **Test SHP File Processing with UTM Projection:**
+   - Load test SHP file
+   - Verify vertices are projected to UTM immediately
+   - Verify mesh generation is performed in UTM
+   - Verify no WGS84 mesh operations
+
+2. **Test Boundary Projection:**
+   - Test with WGS84 boundary
+   - Verify boundary is projected to UTM
+   - Verify boundary coordinates are correct
+   - Verify boundary integrity is maintained
+
+3. **Test Single Coordinate Projection:**
+   - Test `_project_to_utm_single` with known coordinates
+   - Verify UTM coordinates are correct
+   - Verify projection is consistent
+
+4. **Test Mesh Generation in UTM:**
+   - Test `_generate_surface_mesh_from_linestrings` with UTM coordinates
+   - Verify triangulation works correctly
+   - Verify no coordinate system errors
+
+**Validation Criteria:**
+- All tests pass
+- SHP files are projected to UTM immediately
+- No mesh operations in WGS84
+- Boundary projection is accurate
+
+##### 11.6.2 (Implementation): Update SHP Parser to Project to UTM Immediately
+**Objective:** Modify SHP parser to project to UTM immediately after loading, before any mesh operations.
+
+**Files to Edit:**
+- `backend/app/utils/shp_parser.py`
+
+**Specific Changes:**
+
+1. **Modify `process_shp_file` method (lines 298-350):**
+   - **Remove lines 298-320:** Current WGS84 processing
+   - **Add new logic at line 298:**
+     ```python
+     def process_shp_file(self, file_path: str, boundary: Optional[List[Tuple[float, float]]] = None) -> Dict[str, Any]:
+         """
+         Process SHP file and return surface data.
+         Projects to UTM immediately after loading.
+         
+         Args:
+             file_path: Path to SHP file
+             boundary: Optional boundary polygon in WGS84 coordinates
+             
+         Returns:
+             Dictionary with vertices and faces in UTM coordinates
+         """
+         # Load SHP file in WGS84
+         vertices_wgs84 = self._load_shp_vertices(file_path)
+         
+         # Project vertices to UTM immediately
+         vertices_utm = self._project_to_utm(vertices_wgs84)
+         
+         # Project boundary to UTM if provided
+         boundary_utm = None
+         if boundary:
+             boundary_utm = self._project_boundary_to_utm(boundary)
+         
+         # Generate mesh in UTM coordinates
+         mesh_data = self._generate_surface_mesh_from_linestrings(vertices_utm, boundary_utm)
+         
+         return {
+             'vertices': mesh_data['vertices'],
+             'faces': mesh_data['faces'],
+             'coordinate_system': 'UTM',
+             'source_file': file_path
+         }
+     ```
+
+2. **Add new method `_project_boundary_to_utm` (after line 350):**
+   ```python
+   def _project_boundary_to_utm(self, boundary_wgs84: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+       """
+       Project boundary coordinates from WGS84 to UTM.
+       
+       Args:
+           boundary_wgs84: List of (lon, lat) tuples in WGS84
+           
+       Returns:
+           List of (x, y) tuples in UTM coordinates
+       """
+       if not boundary_wgs84 or len(boundary_wgs84) < 3:
+           return boundary_wgs84
+       
+       utm_boundary = []
+       for lon, lat in boundary_wgs84:
+           utm_x, utm_y = self._project_to_utm_single(lon, lat)
+           utm_boundary.append((utm_x, utm_y))
+       
+       return utm_boundary
+   ```
+
+3. **Add new method `_project_to_utm_single` (after line 350):**
+   ```python
+   def _project_to_utm_single(self, lon: float, lat: float) -> Tuple[float, float]:
+       """
+       Project single WGS84 coordinate to UTM.
+       
+       Args:
+           lon: Longitude in degrees
+           lat: Latitude in degrees
+           
+       Returns:
+           Tuple of (utm_x, utm_y) in meters
+       """
+       transformer = Transformer.from_crs("EPSG:4326", "EPSG:32617", always_xy=True)
+       utm_x, utm_y = transformer.transform(lon, lat)
+       return (utm_x, utm_y)
+   ```
+
+4. **Modify `_generate_surface_mesh_from_linestrings` method (lines 216-298):**
+   - **Update method signature at line 216:**
+     ```python
+     def _generate_surface_mesh_from_linestrings(self, vertices_utm: np.ndarray, boundary_utm: Optional[List[Tuple[float, float]]] = None) -> Dict[str, Any]:
+         """
+         Generate surface mesh from LineString vertices in UTM coordinates.
+         
+         Args:
+             vertices_utm: 3D vertices in UTM coordinates
+             boundary_utm: Optional boundary polygon in UTM coordinates
+             
+         Returns:
+             Dictionary with vertices and faces in UTM coordinates
+         """
+     ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- SHP files are projected to UTM immediately
+- No mesh operations performed in WGS84
+- Boundary projection works correctly
 
 #### 11.7.0 Update Documentation and Developer Guidelines
 ##### 11.7.1 (Test First): Write Documentation Tests/Checks
@@ -4291,3 +4918,1001 @@ Refactor the geospatial processing pipeline so that all mesh operations (clippin
 - Acceptance: All regression and validation tests pass.
 ##### 11.8.2 (Implementation): Run and Validate Regression Tests
 - Run all regression and validation tests to confirm correctness and artifact-free output.
+
+#### 11.2.1 Test First: Create Test Suite for Projection System Refactor
+
+**Objective:** Create comprehensive test suite to validate that all mesh operations are performed in UTM coordinates.
+
+**Files to Create:**
+- `backend/tests/test_projection_system_refactor.py`
+
+**Test Cases to Implement:**
+1. **Test SHP Workflow Projection Order:**
+   - Load SHP file in WGS84
+   - Project both mesh and boundary to UTM together
+   - Verify clipping is performed in UTM
+   - Verify triangulation is performed in UTM
+   - Verify area/volume calculations are performed in UTM
+
+2. **Test PLY Workflow Projection Order:**
+   - Load PLY file (already in UTM)
+   - Project boundary to UTM if needed
+   - Verify clipping is performed in UTM
+   - Verify triangulation is performed in UTM
+   - Verify area/volume calculations are performed in UTM
+
+3. **Test Coordinate System Validation:**
+   - Verify no mesh operations are performed in WGS84
+   - Verify all area/volume calculations receive UTM coordinates
+   - Verify all triangulation operations receive UTM coordinates
+
+4. **Test Surface Area Consistency:**
+   - Calculate surface area in WGS84 before projection
+   - Calculate surface area in UTM after projection
+   - Verify areas are consistent (accounting for projection distortion)
+
+**Validation Criteria:**
+- All tests pass
+- No mesh operations performed in WGS84 coordinates
+- Surface areas are consistent between coordinate systems
+- Volume calculations are accurate
+
+#### 11.2.2 Refactor Analysis Executor to Project Mesh and Boundary Together
+
+**Objective:** Modify analysis executor to project both mesh and boundary to UTM before any mesh operations.
+
+**Files to Edit:**
+- `backend/app/services/analysis_executor.py`
+
+**Specific Changes:**
+
+1. **Modify `_execute_analysis_logic` method (lines 88-400):**
+   - **Remove lines 240-250:** SHP clipping in WGS84
+   - **Remove lines 252-253:** SHP UTM conversion after clipping
+   - **Remove lines 255-262:** SHP retriangulation in UTM
+   - **Add new logic after line 239:**
+     ```python
+     # Project both mesh and boundary to UTM before any mesh operations
+     if surface.get('vertices') is not None and len(surface['vertices']) > 0:
+         print(f"DEBUG: Projecting mesh and boundary to UTM together")
+         # Project vertices to UTM
+         utm_vertices = self._convert_wgs84_to_utm(surface['vertices'])
+         surface['vertices'] = utm_vertices
+         
+         # Project boundary to UTM
+         utm_boundary = self._convert_boundary_wgs84_to_utm(boundary_lon_lat)
+         
+         # Now clip in UTM coordinates
+         print(f"DEBUG: Clipping in UTM coordinates")
+         if surface.get('faces') is not None and len(surface['faces']) > 0:
+             clipped_utm_vertices, clipped_utm_faces = self.surface_processor.clip_to_boundary(
+                 utm_vertices, utm_boundary, surface['faces']
+             )
+             surface['vertices'] = clipped_utm_vertices
+             surface['faces'] = clipped_utm_faces
+         else:
+             # No faces available, clip vertices only
+             clipped_utm_vertices = self.surface_processor.clip_to_boundary(
+                 utm_vertices, utm_boundary
+             )
+             surface['vertices'] = clipped_utm_vertices
+     ```
+
+2. **Add new method `_convert_boundary_wgs84_to_utm` (after line 753):**
+   ```python
+   def _convert_boundary_wgs84_to_utm(self, boundary_wgs84: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+       """
+       Convert boundary coordinates from WGS84 to UTM.
+       
+       Args:
+           boundary_wgs84: List of (lon, lat) tuples in WGS84
+           
+       Returns:
+           List of (x, y) tuples in UTM coordinates
+       """
+       if not boundary_wgs84 or len(boundary_wgs84) < 3:
+           return boundary_wgs84
+       
+       utm_boundary = []
+       for lon, lat in boundary_wgs84:
+           utm_x, utm_y = self._convert_wgs84_to_utm_single(lon, lat)
+           utm_boundary.append((utm_x, utm_y))
+       
+       return utm_boundary
+   ```
+
+3. **Add new method `_convert_wgs84_to_utm_single` (after line 753):**
+   ```python
+   def _convert_wgs84_to_utm_single(self, lon: float, lat: float) -> Tuple[float, float]:
+       """
+       Convert single WGS84 coordinate to UTM.
+       
+       Args:
+           lon: Longitude in degrees
+           lat: Latitude in degrees
+           
+       Returns:
+           Tuple of (utm_x, utm_y) in meters
+       """
+       transformer = Transformer.from_crs("EPSG:4326", "EPSG:32617", always_xy=True)
+       utm_x, utm_y = transformer.transform(lon, lat)
+       return (utm_x, utm_y)
+   ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- SHP workflow projects mesh and boundary together to UTM
+- No mesh operations performed in WGS84
+- Clipping and triangulation performed in UTM
+
+#### 11.2.3 Test First: Create Tests for Updated Analysis Executor
+
+**Objective:** Create tests to validate the refactored analysis executor projection logic.
+
+**Files to Create:**
+- `backend/tests/test_analysis_executor_projection.py`
+
+**Test Cases to Implement:**
+1. **Test SHP Workflow Projection Order:**
+   - Mock SHP surface with WGS84 coordinates
+   - Mock boundary with WGS84 coordinates
+   - Verify both are projected to UTM together
+   - Verify clipping is performed in UTM
+   - Verify triangulation is performed in UTM
+
+2. **Test PLY Workflow (Already in UTM):**
+   - Mock PLY surface with UTM coordinates
+   - Mock boundary with WGS84 coordinates
+   - Verify boundary is projected to UTM
+   - Verify clipping is performed in UTM
+   - Verify no unnecessary projection of mesh
+
+3. **Test Boundary Projection:**
+   - Test `_convert_boundary_wgs84_to_utm` with various boundary shapes
+   - Verify boundary coordinates are correctly converted
+   - Verify boundary integrity is maintained
+
+4. **Test Single Coordinate Projection:**
+   - Test `_convert_wgs84_to_utm_single` with known coordinates
+   - Verify UTM coordinates are correct
+   - Verify projection is consistent
+
+**Validation Criteria:**
+- All tests pass
+- Projection order is correct
+- No mesh operations in WGS84
+- Boundary projection is accurate
+
+#### 11.2.4 Update Surface Processor to Handle UTM-Only Operations
+
+**Objective:** Modify surface processor to ensure all operations are performed in UTM coordinates.
+
+**Files to Edit:**
+- `backend/app/services/surface_processor.py`
+
+**Specific Changes:**
+
+1. **Modify `clip_to_boundary` method (lines 33-100):**
+   - **Add coordinate system validation at line 35:**
+     ```python
+     def clip_to_boundary(self, vertices: np.ndarray, boundary: list, faces: Optional[np.ndarray] = None) -> tuple:
+         """
+         Clip vertices (and optionally faces) to a boundary.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             vertices: 3D vertices in UTM coordinates
+             boundary: Boundary polygon in UTM coordinates
+             faces: Optional face indices
+             
+         Returns:
+             Tuple of (clipped_vertices, clipped_faces)
+         """
+         # Validate coordinate system (UTM coordinates should be in meters, not degrees)
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords > 180) or np.any(y_coords > 90):
+                 # Coordinates are likely in UTM (meters), which is correct
+                 pass
+             else:
+                 logger.warning("Vertices appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+2. **Modify `clip_mesh_to_boundary` method (lines 33-273):**
+   - **Add coordinate system validation at line 35:**
+     ```python
+     def clip_mesh_to_boundary(self, vertices: np.ndarray, faces: np.ndarray, boundary: list) -> tuple:
+         """
+         Clip a surface mesh (vertices, faces) to a polygon boundary.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             vertices: 3D vertices in UTM coordinates
+             faces: Face indices
+             boundary: Boundary polygon in UTM coordinates
+             
+         Returns:
+             Tuple of (clipped_vertices, clipped_faces)
+         """
+         # Validate coordinate system
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords > 180) or np.any(y_coords > 90):
+                 # Coordinates are likely in UTM (meters), which is correct
+                 pass
+             else:
+                 logger.warning("Vertices appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+3. **Modify `create_constrained_triangulation` method (lines 685-883):**
+   - **Add coordinate system validation at line 687:**
+     ```python
+     def create_constrained_triangulation(self, vertices: np.ndarray, boundary_polygon) -> tuple:
+         """
+         Create a triangulated mesh constrained to the boundary polygon using Triangle library.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             vertices: 3D vertices in UTM coordinates
+             boundary_polygon: Boundary polygon in UTM coordinates
+             
+         Returns:
+             Tuple of (vertices, faces) where all faces are inside the boundary
+         """
+         # Validate coordinate system
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords > 180) or np.any(y_coords > 90):
+                 # Coordinates are likely in UTM (meters), which is correct
+                 pass
+             else:
+                 logger.warning("Vertices appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works correctly
+- No mesh operations performed in WGS84
+- Warnings are logged for incorrect coordinate systems
+
+#### 11.2.5 Test First: Create Tests for Updated Surface Processor
+
+**Objective:** Create tests to validate the updated surface processor UTM-only operations.
+
+**Files to Create:**
+- `backend/tests/test_surface_processor_utm.py`
+
+**Test Cases to Implement:**
+1. **Test Coordinate System Validation:**
+   - Test with UTM coordinates (should pass)
+   - Test with WGS84 coordinates (should log warning)
+   - Test with mixed coordinates (should log warning)
+
+2. **Test Clipping with UTM Coordinates:**
+   - Create test mesh in UTM coordinates
+   - Create test boundary in UTM coordinates
+   - Verify clipping works correctly
+   - Verify no coordinate system errors
+
+3. **Test Triangulation with UTM Coordinates:**
+   - Create test vertices in UTM coordinates
+   - Create test boundary in UTM coordinates
+   - Verify triangulation works correctly
+   - Verify no coordinate system errors
+
+4. **Test Error Handling:**
+   - Test with invalid coordinates
+   - Test with empty vertices
+   - Test with invalid boundaries
+   - Verify appropriate error messages
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- No mesh operations in WGS84
+- Appropriate warnings are logged
+
+#### 11.2.6 Update Volume Calculator to Validate UTM Input
+
+**Objective:** Modify volume calculator to ensure all calculations receive UTM coordinates.
+
+**Files to Edit:**
+- `backend/app/services/volume_calculator.py`
+
+**Specific Changes:**
+
+1. **Modify `calculate_volume_between_surfaces` function (lines 148-200):**
+   - **Add coordinate system validation at line 150:**
+     ```python
+     def calculate_volume_between_surfaces(
+         bottom_surface: np.ndarray, 
+         top_surface: np.ndarray,
+         method: str = "pyvista"
+     ) -> float:
+         """
+         Calculate volume between two surfaces using PyVista mesh operations.
+         Assumes all coordinates are in UTM (meters).
+         
+         Args:
+             bottom_surface: 3D points representing bottom surface [N, 3] in UTM
+             top_surface: 3D points representing top surface [M, 3] in UTM
+             method: Calculation method ("pyvista" or "prism")
+             
+         Returns:
+             Volume in cubic units (same units as input coordinates)
+             
+         Raises:
+             ValueError: If surfaces are invalid or in wrong coordinate system
+         """
+         # Validate coordinate system
+         for surface_name, surface in [("bottom_surface", bottom_surface), ("top_surface", top_surface)]:
+             if surface is not None and len(surface) > 0:
+                 x_coords = surface[:, 0]
+                 y_coords = surface[:, 1]
+                 if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                     logger.warning(f"{surface_name} appears to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+2. **Modify `calculate_surface_area` function (lines 644-665):**
+   - **Add coordinate system validation at line 646:**
+     ```python
+     def calculate_surface_area(surface_points: np.ndarray) -> float:
+         """
+         Calculate approximate surface area of a point cloud surface.
+         Assumes coordinates are in UTM (meters).
+         
+         Args:
+             surface_points: 3D points representing surface [N, 3] in UTM
+             
+         Returns:
+             Approximate surface area in square meters
+         """
+         # Validate coordinate system
+         if surface_points is not None and len(surface_points) > 0:
+             x_coords = surface_points[:, 0]
+             y_coords = surface_points[:, 1]
+             if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                 logger.warning("Surface points appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+3. **Modify `calculate_real_surface_area` function (lines 717-748):**
+   - **Add coordinate system validation at line 719:**
+     ```python
+     def calculate_real_surface_area(surface_points: np.ndarray) -> float:
+         """
+         Calculate real surface area using triangulation.
+         Assumes coordinates are in UTM (meters).
+         
+         Args:
+             surface_points: 3D points representing surface [N, 3] in UTM
+             
+         Returns:
+             Real surface area in square meters
+         """
+         # Validate coordinate system
+         if surface_points is not None and len(surface_points) > 0:
+             x_coords = surface_points[:, 0]
+             y_coords = surface_points[:, 1]
+             if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                 logger.warning("Surface points appear to be in WGS84 coordinates. Expected UTM coordinates.")
+     ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works
+- No volume calculations performed in WGS84
+- Appropriate warnings are logged
+
+#### 11.2.7 Test First: Create Tests for Updated Volume Calculator
+
+**Objective:** Create tests to validate the updated volume calculator UTM validation.
+
+**Files to Create:**
+- `backend/tests/test_volume_calculator_utm.py`
+
+**Test Cases to Implement:**
+1. **Test Volume Calculation with UTM Coordinates:**
+   - Create test surfaces in UTM coordinates
+   - Verify volume calculation works correctly
+   - Verify no coordinate system warnings
+
+2. **Test Volume Calculation with WGS84 Coordinates:**
+   - Create test surfaces in WGS84 coordinates
+   - Verify warning is logged
+   - Verify calculation still works (with warning)
+
+3. **Test Surface Area Calculation with UTM Coordinates:**
+   - Create test surface in UTM coordinates
+   - Verify area calculation works correctly
+   - Verify no coordinate system warnings
+
+4. **Test Surface Area Calculation with WGS84 Coordinates:**
+   - Create test surface in WGS84 coordinates
+   - Verify warning is logged
+   - Verify calculation still works (with warning)
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- Appropriate warnings are logged
+- Calculations still work with warnings
+
+#### 11.2.8 Update SHP Parser to Project to UTM Immediately
+
+**Objective:** Modify SHP parser to project to UTM immediately after loading, before any mesh operations.
+
+**Files to Edit:**
+- `backend/app/utils/shp_parser.py`
+
+**Specific Changes:**
+
+1. **Modify `process_shp_file` method (lines 298-350):**
+   - **Remove lines 298-320:** Current WGS84 processing
+   - **Add new logic at line 298:**
+     ```python
+     def process_shp_file(self, file_path: str, boundary: Optional[List[Tuple[float, float]]] = None) -> Dict[str, Any]:
+         """
+         Process SHP file and return surface data.
+         Projects to UTM immediately after loading.
+         
+         Args:
+             file_path: Path to SHP file
+             boundary: Optional boundary polygon in WGS84 coordinates
+             
+         Returns:
+             Dictionary with vertices and faces in UTM coordinates
+         """
+         # Load SHP file in WGS84
+         vertices_wgs84 = self._load_shp_vertices(file_path)
+         
+         # Project vertices to UTM immediately
+         vertices_utm = self._project_to_utm(vertices_wgs84)
+         
+         # Project boundary to UTM if provided
+         boundary_utm = None
+         if boundary:
+             boundary_utm = self._project_boundary_to_utm(boundary)
+         
+         # Generate mesh in UTM coordinates
+         mesh_data = self._generate_surface_mesh_from_linestrings(vertices_utm, boundary_utm)
+         
+         return {
+             'vertices': mesh_data['vertices'],
+             'faces': mesh_data['faces'],
+             'coordinate_system': 'UTM',
+             'source_file': file_path
+         }
+     ```
+
+2. **Add new method `_project_boundary_to_utm` (after line 350):**
+   ```python
+   def _project_boundary_to_utm(self, boundary_wgs84: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
+       """
+       Project boundary coordinates from WGS84 to UTM.
+       
+       Args:
+           boundary_wgs84: List of (lon, lat) tuples in WGS84
+           
+       Returns:
+           List of (x, y) tuples in UTM coordinates
+       """
+       if not boundary_wgs84 or len(boundary_wgs84) < 3:
+           return boundary_wgs84
+       
+       utm_boundary = []
+       for lon, lat in boundary_wgs84:
+           utm_x, utm_y = self._project_to_utm_single(lon, lat)
+           utm_boundary.append((utm_x, utm_y))
+       
+       return utm_boundary
+   ```
+
+3. **Add new method `_project_to_utm_single` (after line 350):**
+   ```python
+   def _project_to_utm_single(self, lon: float, lat: float) -> Tuple[float, float]:
+       """
+       Project single WGS84 coordinate to UTM.
+       
+       Args:
+           lon: Longitude in degrees
+           lat: Latitude in degrees
+           
+       Returns:
+           Tuple of (utm_x, utm_y) in meters
+       """
+       transformer = Transformer.from_crs("EPSG:4326", "EPSG:32617", always_xy=True)
+       utm_x, utm_y = transformer.transform(lon, lat)
+       return (utm_x, utm_y)
+   ```
+
+4. **Modify `_generate_surface_mesh_from_linestrings` method (lines 216-298):**
+   - **Update method signature at line 216:**
+     ```python
+     def _generate_surface_mesh_from_linestrings(self, vertices_utm: np.ndarray, boundary_utm: Optional[List[Tuple[float, float]]] = None) -> Dict[str, Any]:
+         """
+         Generate surface mesh from LineString vertices in UTM coordinates.
+         
+         Args:
+             vertices_utm: 3D vertices in UTM coordinates
+             boundary_utm: Optional boundary polygon in UTM coordinates
+             
+         Returns:
+             Dictionary with vertices and faces in UTM coordinates
+         """
+     ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- SHP files are projected to UTM immediately
+- No mesh operations performed in WGS84
+- Boundary projection works correctly
+
+#### 11.2.9 Test First: Create Tests for Updated SHP Parser
+
+**Objective:** Create tests to validate the updated SHP parser UTM projection.
+
+**Files to Create:**
+- `backend/tests/test_shp_parser_utm.py`
+
+**Test Cases to Implement:**
+1. **Test SHP File Processing with UTM Projection:**
+   - Load test SHP file
+   - Verify vertices are projected to UTM immediately
+   - Verify mesh generation is performed in UTM
+   - Verify no WGS84 mesh operations
+
+2. **Test Boundary Projection:**
+   - Test with WGS84 boundary
+   - Verify boundary is projected to UTM
+   - Verify boundary coordinates are correct
+   - Verify boundary integrity is maintained
+
+3. **Test Single Coordinate Projection:**
+   - Test `_project_to_utm_single` with known coordinates
+   - Verify UTM coordinates are correct
+   - Verify projection is consistent
+
+4. **Test Mesh Generation in UTM:**
+   - Test `_generate_surface_mesh_from_linestrings` with UTM coordinates
+   - Verify triangulation works correctly
+   - Verify no coordinate system errors
+
+**Validation Criteria:**
+- All tests pass
+- SHP files are projected to UTM immediately
+- No mesh operations in WGS84
+- Boundary projection is accurate
+
+#### 11.2.10 Update PLY Parser to Validate UTM Input
+
+**Objective:** Modify PLY parser to validate that input files are in UTM coordinates.
+
+**Files to Edit:**
+- `backend/app/utils/ply_parser.py`
+
+**Specific Changes:**
+
+1. **Modify `parse_ply_file` method (lines 1-50):**
+   - **Add coordinate system validation after line 20:**
+     ```python
+     def parse_ply_file(self, file_path: str) -> Tuple[np.ndarray, np.ndarray]:
+         """
+         Parse a PLY file and return vertex and face data.
+         Assumes coordinates are in UTM (meters).
+         
+         Args:
+             file_path: Path to PLY file
+             
+         Returns:
+             Tuple of (vertices, faces) in UTM coordinates
+         """
+         # Parse PLY file
+         vertices, faces = self._parse_ply_data(file_path)
+         
+         # Validate coordinate system
+         if vertices is not None and len(vertices) > 0:
+             x_coords = vertices[:, 0]
+             y_coords = vertices[:, 1]
+             if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+                 logger.warning("PLY file coordinates appear to be in WGS84. Expected UTM coordinates.")
+         
+         return vertices, faces
+     ```
+
+2. **Add new method `validate_utm_coordinates` (after line 50):**
+   ```python
+   def validate_utm_coordinates(self, vertices: np.ndarray) -> bool:
+       """
+       Validate that vertices are in UTM coordinates.
+       
+       Args:
+           vertices: 3D vertices
+           
+       Returns:
+           True if coordinates appear to be in UTM, False otherwise
+       """
+       if vertices is None or len(vertices) == 0:
+           return True
+       
+       x_coords = vertices[:, 0]
+       y_coords = vertices[:, 1]
+       
+       # UTM coordinates should be in meters, typically > 1000
+       # WGS84 coordinates are in degrees, typically < 180
+       if np.any(x_coords <= 180) and np.any(y_coords <= 90):
+           return False
+       
+       return True
+   ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works
+- Warnings are logged for WGS84 coordinates
+- PLY parsing still works correctly
+
+#### 11.2.11 Test First: Create Tests for Updated PLY Parser
+
+**Objective:** Create tests to validate the updated PLY parser UTM validation.
+
+**Files to Create:**
+- `backend/tests/test_ply_parser_utm.py`
+
+**Test Cases to Implement:**
+1. **Test PLY Parsing with UTM Coordinates:**
+   - Create test PLY file with UTM coordinates
+   - Verify parsing works correctly
+   - Verify no coordinate system warnings
+
+2. **Test PLY Parsing with WGS84 Coordinates:**
+   - Create test PLY file with WGS84 coordinates
+   - Verify warning is logged
+   - Verify parsing still works
+
+3. **Test Coordinate System Validation:**
+   - Test `validate_utm_coordinates` with UTM coordinates
+   - Test `validate_utm_coordinates` with WGS84 coordinates
+   - Verify validation works correctly
+
+4. **Test Error Handling:**
+   - Test with invalid PLY files
+   - Test with empty files
+   - Test with corrupted data
+   - Verify appropriate error messages
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- Appropriate warnings are logged
+- PLY parsing still works correctly
+
+#### 11.2.12 Update Visualization Components to Handle UTM Coordinates
+
+**Objective:** Modify frontend visualization components to handle UTM coordinates correctly.
+
+**Files to Edit:**
+- `frontend/src/components/ThreeDViewer.js`
+
+**Specific Changes:**
+
+1. **Modify surface rendering logic (lines 150-200):**
+   - **Add coordinate system validation at line 150:**
+     ```javascript
+     // Create surface meshes
+     surfaces.forEach((surface, index) => {
+       if (!surface.vertices || surface.vertices.length === 0) return;
+
+       // Validate coordinate system (UTM coordinates should be in meters)
+       const xCoords = surface.vertices.map(v => v[0]);
+       const yCoords = surface.vertices.map(v => v[1]);
+       const maxX = Math.max(...xCoords);
+       const maxY = Math.max(...yCoords);
+       
+       if (maxX <= 180 && maxY <= 90) {
+         console.warn(`Surface ${index} appears to be in WGS84 coordinates. Expected UTM coordinates.`);
+       }
+
+       // Create geometry from vertices
+       const geometry = new THREE.BufferGeometry();
+       const vertices = new Float32Array(surface.vertices.flat());
+       geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+     ```
+
+2. **Add coordinate system validation function (after line 343):**
+   ```javascript
+   /**
+    * Validate that coordinates are in UTM (meters) rather than WGS84 (degrees)
+    * @param {Array} vertices - Array of 3D vertices
+    * @returns {boolean} - True if coordinates appear to be in UTM
+    */
+   const validateUTMCoordinates = (vertices) => {
+     if (!vertices || vertices.length === 0) return true;
+     
+     const xCoords = vertices.map(v => v[0]);
+     const yCoords = vertices.map(v => v[1]);
+     const maxX = Math.max(...xCoords);
+     const maxY = Math.max(...yCoords);
+     
+     // UTM coordinates should be in meters, typically > 1000
+     // WGS84 coordinates are in degrees, typically < 180
+     return maxX > 180 || maxY > 90;
+   };
+   ```
+
+**Files to Delete:**
+- None (modify existing file)
+
+**Validation Criteria:**
+- All existing tests pass
+- Coordinate system validation works
+- Warnings are logged for WGS84 coordinates
+- Visualization still works correctly
+
+#### 11.2.13 Test First: Create Tests for Updated Visualization Components
+
+**Objective:** Create tests to validate the updated visualization components UTM validation.
+
+**Files to Create:**
+- `frontend/src/components/__tests__/ThreeDViewer.test.js`
+
+**Test Cases to Implement:**
+1. **Test Visualization with UTM Coordinates:**
+   - Create test surfaces with UTM coordinates
+   - Verify visualization works correctly
+   - Verify no coordinate system warnings
+
+2. **Test Visualization with WGS84 Coordinates:**
+   - Create test surfaces with WGS84 coordinates
+   - Verify warning is logged
+   - Verify visualization still works
+
+3. **Test Coordinate System Validation:**
+   - Test `validateUTMCoordinates` with UTM coordinates
+   - Test `validateUTMCoordinates` with WGS84 coordinates
+   - Verify validation works correctly
+
+4. **Test Error Handling:**
+   - Test with invalid surface data
+   - Test with empty surfaces
+   - Test with missing vertices
+   - Verify appropriate error messages
+
+**Validation Criteria:**
+- All tests pass
+- Coordinate system validation works
+- Appropriate warnings are logged
+- Visualization still works correctly
+
+#### 11.2.14 Remove Unnecessary Files and Functions
+
+**Objective:** Remove files and functions that are no longer needed after the projection system refactor.
+
+**Files to Delete:**
+- `backend/test_coordinate_transformation_triangulation.py` (replaced by new tests)
+- `backend/test_triangulation_transfer_fix.py` (replaced by new tests)
+
+**Functions to Remove:**
+
+1. **From `backend/app/services/analysis_executor.py`:**
+   - **Remove lines 700-753:** `_convert_wgs84_to_utm` method (replaced by new methods)
+   - **Remove lines 754-800:** Any other WGS84 to UTM conversion methods
+
+2. **From `backend/app/utils/shp_parser.py`:**
+   - **Remove lines 300-320:** Old WGS84 processing methods
+   - **Remove lines 350-400:** Any other WGS84 to UTM conversion methods
+
+3. **From `backend/app/services/surface_processor.py`:**
+   - **Remove lines 800-900:** Any WGS84-specific clipping methods
+   - **Remove lines 900-1000:** Any WGS84-specific triangulation methods
+
+**Validation Criteria:**
+- All remaining tests pass
+- No broken imports or references
+- Codebase is cleaner and more focused
+- No functionality is lost
+
+#### 11.2.15 Update Documentation and Configuration
+
+**Objective:** Update documentation and configuration to reflect the new projection system.
+
+**Files to Edit:**
+- `docs/algorithm_specifications.md`
+- `config/processing_defaults.yaml`
+
+**Specific Changes:**
+
+1. **Update `docs/algorithm_specifications.md`:**
+   - **Add new section "Coordinate System Requirements":**
+     ```markdown
+     ## Coordinate System Requirements
+     
+     All mesh operations (clipping, triangulation, area, and volume calculations) must be performed in UTM coordinates (meters). No mesh operation should be performed in WGS84 coordinates (degrees).
+     
+     ### SHP Workflow
+     1. Load SHP file in WGS84 coordinates
+     2. Project both mesh and boundary to UTM together
+     3. Perform all mesh operations in UTM coordinates
+     4. Calculate area and volume in UTM coordinates
+     
+     ### PLY Workflow
+     1. Load PLY file (already in UTM coordinates)
+     2. Project boundary to UTM if needed
+     3. Perform all mesh operations in UTM coordinates
+     4. Calculate area and volume in UTM coordinates
+     
+     ### Validation
+     - All mesh operations validate coordinate system
+     - Warnings are logged for WGS84 coordinates
+     - Calculations assume UTM coordinates (meters)
+     ```
+
+2. **Update `config/processing_defaults.yaml`:**
+   - **Add coordinate system configuration:**
+     ```yaml
+     coordinate_system:
+       default_projection: "EPSG:32617"  # UTM Zone 17N
+       required_for_mesh_operations: "UTM"
+       validation_enabled: true
+       warning_threshold: 180  # degrees
+     
+     projection:
+       shp_workflow:
+         project_immediately: true
+         project_mesh_and_boundary_together: true
+       ply_workflow:
+         validate_utm_input: true
+         project_boundary_if_needed: true
+     ```
+
+**Files to Delete:**
+- None (modify existing files)
+
+**Validation Criteria:**
+- Documentation is clear and accurate
+- Configuration is consistent with implementation
+- No outdated information
+- Examples are provided
+
+#### 11.2.16 Run Full Regression Test Suite
+
+**Objective:** Run all tests to ensure the projection system refactor works correctly.
+
+**Files to Execute:**
+- All test files in `backend/tests/`
+- All test files in `frontend/src/components/__tests__/`
+
+**Test Commands:**
+```bash
+# Backend tests
+cd backend && python -m pytest tests/ -v
+
+# Frontend tests
+cd frontend && npm test
+
+# Integration tests
+python backend/test_shp_workflow.py
+python backend/test_ply_workflow.py
+```
+
+**Validation Criteria:**
+- All tests pass
+- No regressions introduced
+- Performance is maintained or improved
+- All workflows work correctly
+
+#### 11.2.17 Update API Documentation
+
+**Objective:** Update API documentation to reflect the new coordinate system requirements.
+
+**Files to Edit:**
+- `docs/api_documentation.md`
+
+**Specific Changes:**
+
+1. **Add coordinate system documentation:**
+   ```markdown
+   ## Coordinate System Requirements
+   
+   All API endpoints that process surface data require coordinates to be in UTM (meters). The system will automatically project WGS84 coordinates to UTM, but this may result in warnings.
+   
+   ### Input Requirements
+   - SHP files: Automatically projected from WGS84 to UTM
+   - PLY files: Must be in UTM coordinates
+   - Boundaries: Automatically projected from WGS84 to UTM
+   
+   ### Output Format
+   - All coordinates returned in UTM (meters)
+   - All areas in square meters
+   - All volumes in cubic meters (converted to cubic yards for display)
+   
+   ### Validation
+   - Coordinate system validation is performed automatically
+   - Warnings are logged for WGS84 coordinates
+   - Calculations assume UTM coordinates
+   ```
+
+2. **Update endpoint documentation:**
+   - Update all surface processing endpoints to mention coordinate system requirements
+   - Update all visualization endpoints to mention coordinate system requirements
+   - Update all calculation endpoints to mention coordinate system requirements
+
+**Validation Criteria:**
+- Documentation is clear and accurate
+- API users understand coordinate system requirements
+- Examples are provided
+- No outdated information
+
+#### 11.2.18 Create Migration Guide
+
+**Objective:** Create a migration guide for users of the old system.
+
+**Files to Create:**
+- `docs/migration_guide.md`
+
+**Content to Include:**
+```markdown
+# Migration Guide: Projection System Refactor
+
+## Overview
+The projection system has been refactored to ensure all mesh operations are performed in UTM coordinates. This improves accuracy and eliminates transformation artifacts.
+
+## Changes for Users
+
+### SHP Files
+- No changes required
+- Files are automatically projected from WGS84 to UTM
+- All processing is performed in UTM coordinates
+
+### PLY Files
+- Files must be in UTM coordinates (meters)
+- WGS84 coordinates will generate warnings
+- No automatic projection for PLY files
+
+### Boundaries
+- Boundaries are automatically projected from WGS84 to UTM
+- No changes required for boundary definitions
+
+### Results
+- All coordinates returned in UTM (meters)
+- All areas in square meters
+- All volumes in cubic meters (converted to cubic yards for display)
+
+## Breaking Changes
+- None for SHP workflows
+- PLY files must be in UTM coordinates
+- Warnings may be logged for WGS84 coordinates
+
+## Migration Steps
+1. Ensure PLY files are in UTM coordinates
+2. Update any custom boundaries to WGS84 format
+3. Test workflows to ensure compatibility
+4. Monitor logs for coordinate system warnings
+
+## Support
+- Contact support if you encounter coordinate system issues
+- Provide log files with warnings for debugging
+```
+
+**Validation Criteria:**
+- Guide is clear and comprehensive
+- All breaking changes are documented
+- Migration steps are clear
+- Support information is provided
