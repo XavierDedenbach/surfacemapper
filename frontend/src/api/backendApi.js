@@ -353,6 +353,32 @@ const backendApi = {
       throw error;
     }
   },
+
+  uploadShpFiles: async (files) => {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file, file.name);
+    });
+    try {
+      const response = await api.post('/api/surfaces/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Error uploading SHP files:', error);
+      if (error.response) {
+        const errorData = error.response.data;
+        const errorMessage = errorData.detail || JSON.stringify(errorData);
+        throw new Error(errorMessage);
+      } else if (error.request) {
+        throw new Error('No response from server during SHP file upload.');
+      } else {
+        throw new Error(error.message);
+      }
+    }
+  },
 };
 
 // Request interceptor for logging and authentication

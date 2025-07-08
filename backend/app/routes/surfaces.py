@@ -19,71 +19,136 @@ UPLOAD_DIR = "/tmp/surfacemapper_uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/upload", response_model=SurfaceUploadResponse)
-async def upload_surface(file: UploadFile = File(...)):
+async def upload_surface(files: List[UploadFile] = File(...)):
     """
-    Upload a .ply or .shp surface file for processing
+    Upload one or more files for a surface (PLY or SHP set)
     """
-    logger.info(f"Uploading surface file: {file.filename}")
+    if not files or len(files) == 0:
+        raise HTTPException(status_code=400, detail="No files uploaded.")
 
-    if not validate_file_extension(file.filename):
-        raise HTTPException(status_code=400, detail="Invalid file type: only .ply and .shp files are supported.")
+    # If only one file and it's a PLY, handle as before
+    if len(files) == 1 and files[0].filename.lower().endswith('.ply'):
+        file = files[0]
+        logger.info(f"Uploading surface file: {file.filename}")
 
-    # Determine file type and extension
-    file_extension = os.path.splitext(file.filename.lower())[1]
+        if not validate_file_extension(file.filename):
+            raise HTTPException(status_code=400, detail="Invalid file type: only .ply and .shp files are supported.")
+
+        # Determine file type and extension
+        file_extension = os.path.splitext(file.filename.lower())[1]
+        file_id = str(uuid.uuid4())
+        temp_path = os.path.join(UPLOAD_DIR, f"{file_id}{file_extension}")
+        
+        size_bytes = 0
+        try:
+            with open(temp_path, "wb") as out:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out.write(chunk)
+                    size_bytes += len(chunk)
+        except Exception as e:
+            logger.error(f"Failed to save uploaded file: {e}")
+            raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
+
+        if not validate_file_size(size_bytes):
+            os.remove(temp_path)
+            raise HTTPException(status_code=400, detail="File is empty or exceeds 2GB size limit.")
+
+        try:
+            with open(temp_path, "rb") as f:
+                if not validate_file_format(file.filename, f):
+                    # Safe file removal
+                    try:
+                        os.remove(temp_path)
+                    except FileNotFoundError:
+                        pass  # File already removed or doesn't exist
+                    raise HTTPException(status_code=400, detail=f"Invalid {file_extension} file format.")
+        except Exception as e:
+            logger.error(f"Failed to validate {file_extension} file: {e}")
+            # Safe file removal
+            try:
+                os.remove(temp_path)
+            except FileNotFoundError:
+                pass  # File already removed or doesn't exist
+            raise HTTPException(status_code=400, detail=f"Invalid or corrupted {file_extension} file.")
+
+        # Generate a unique ID and cache the surface metadata and file path
+        surface_id = str(uuid.uuid4())
+        surface_cache.set(surface_id, {
+            "file_path": temp_path,
+            "filename": file.filename,
+            "size_bytes": size_bytes,
+            "file_type": file_extension[1:].upper()  # Store file type (PLY or SHP)
+        })
+
+        return SurfaceUploadResponse(
+            message=f"Surface uploaded successfully and is ready for analysis.",
+            filename=file.filename,
+            surface_id=surface_id,
+            status=ProcessingStatus.PENDING,
+            vertices=[],  # No longer sending vertices in response
+            faces=[]  # No longer sending faces in response
+        )
+
+    # Otherwise, treat as SHP multi-file upload
+    # Group files by base name (before extension)
+    from collections import defaultdict
+    grouped = defaultdict(dict)
+    for f in files:
+        base, ext = os.path.splitext(f.filename)
+        grouped[base][ext.lower()] = f
+
+    # Only process the first group (one surface per upload)
+    base, file_dict = next(iter(grouped.items()))
+    required_exts = ['.shp', '.shx', '.dbf']
+    missing = [ext for ext in required_exts if ext not in file_dict]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing required SHP components: {', '.join(missing)}")
+
+    # Save all files to disk with the same base name (uuid)
     file_id = str(uuid.uuid4())
-    temp_path = os.path.join(UPLOAD_DIR, f"{file_id}{file_extension}")
-    
-    size_bytes = 0
-    try:
+    base_path = os.path.join(UPLOAD_DIR, file_id)
+    temp_paths = {}
+    for ext, upload_file in file_dict.items():
+        temp_path = f"{base_path}{ext}"
         with open(temp_path, "wb") as out:
             while True:
-                chunk = await file.read(1024 * 1024)
+                chunk = await upload_file.read(1024 * 1024)
                 if not chunk:
                     break
                 out.write(chunk)
-                size_bytes += len(chunk)
-    except Exception as e:
-        logger.error(f"Failed to save uploaded file: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save uploaded file.")
+        temp_paths[ext] = temp_path
 
-    if not validate_file_size(size_bytes):
-        os.remove(temp_path)
-        raise HTTPException(status_code=400, detail="File is empty or exceeds 2GB size limit.")
-
+    # Validate the .shp file by opening it with Fiona using the path (not file object)
     try:
-        with open(temp_path, "rb") as f:
-            if not validate_file_format(file.filename, f):
-                # Safe file removal
-                try:
-                    os.remove(temp_path)
-                except FileNotFoundError:
-                    pass  # File already removed or doesn't exist
-                raise HTTPException(status_code=400, detail=f"Invalid {file_extension} file format.")
+        import fiona
+        with fiona.open(f"{base_path}.shp") as src:
+            pass  # If it opens, it's valid
     except Exception as e:
-        logger.error(f"Failed to validate {file_extension} file: {e}")
-        # Safe file removal
-        try:
-            os.remove(temp_path)
-        except FileNotFoundError:
-            pass  # File already removed or doesn't exist
-        raise HTTPException(status_code=400, detail=f"Invalid or corrupted {file_extension} file.")
+        for p in temp_paths.values():
+            try: os.remove(p)
+            except Exception: pass
+        raise HTTPException(status_code=400, detail=f"Invalid or corrupted .shp file: {e}")
 
-    # Generate a unique ID and cache the surface metadata and file path
+    # Cache the surface metadata and file paths
     surface_id = str(uuid.uuid4())
     surface_cache.set(surface_id, {
-        "file_path": temp_path,
-        "filename": file.filename,
-        "size_bytes": size_bytes,
-        "file_type": file_extension[1:].upper()  # Store file type (PLY or SHP)
+        "file_path": temp_paths['.shp'],
+        "filename": file_dict['.shp'].filename,
+        "size_bytes": os.path.getsize(temp_paths['.shp']),
+        "file_type": "SHP",
+        "shp_components": temp_paths
     })
 
     return SurfaceUploadResponse(
-        message=f"Surface uploaded successfully and is ready for analysis.",
-        filename=file.filename,
+        message=f"SHP surface uploaded successfully and is ready for analysis.",
+        filename=file_dict['.shp'].filename,
         surface_id=surface_id,
         status=ProcessingStatus.PENDING,
-        vertices=[],  # No longer sending vertices in response
-        faces=[]  # No longer sending faces in response
+        vertices=[],
+        faces=[]
     )
 
 @router.post("/validate")

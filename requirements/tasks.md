@@ -4220,3 +4220,74 @@ def test_shp_and_ply_integration():
 **Code Estimate**: ~30 lines
 **How to Test**: Docs are clear, users can upload and analyze SHP files
 **Acceptance Criteria**: Documentation is up to date and accurate
+
+## Major Task 11.0.0: Projection System Refactor – Project Mesh and Boundary Together to UTM Before Mesh Operations
+
+### Overview
+Refactor the geospatial processing pipeline so that all mesh operations (clipping, triangulation, area, and volume calculations) are performed in UTM (or a local metric projection). Both the mesh (surface vertices) and the boundary polygon must be projected together to the same UTM system before any mesh operation. No mesh operation should be performed in WGS84 (degrees).
+
+### Subtasks
+
+#### 11.1.0 Audit and Document Current Projection and Clipping Logic
+- Identify all locations in the codebase where projection, clipping, triangulation, or area/volume calculations are performed.
+- Document which coordinate system (WGS84, UTM, other) is used at each step.
+- Output: Table or diagram showing current workflow and coordinate system at each stage.
+
+#### 11.2.0 Refactor Input Handling to Project Mesh and Boundary Together
+##### 11.2.1 (Test First): Write Tests for Input Projection Utility
+- Write tests to ensure that both mesh and boundary are projected to the same UTM zone before any mesh operation.
+- Test with various input types (SHP, PLY) and edge cases (crossing UTM zones, invalid input).
+- Acceptance: All tests pass, projection is consistent and robust.
+##### 11.2.2 (Implementation): Implement Input Projection Utility
+- As soon as a surface (mesh) and its boundary are loaded, project both to the same UTM zone (or local metric projection) before any further processing.
+- Output: Utility function(s) for projecting both mesh and boundary together.
+
+#### 11.3.0 Update Clipping and Triangulation to Operate Only in UTM
+##### 11.3.1 (Test First): Write Tests for UTM-Only Mesh Operations
+- Write tests to ensure that all mesh clipping and triangulation are performed in UTM coordinates only.
+- Test with known geometries and compare results to expected metric outputs.
+- Acceptance: No mesh operation is performed in WGS84, all tests pass.
+##### 11.3.2 (Implementation): Refactor Mesh Operations to UTM
+- Refactor all mesh clipping and triangulation code to operate exclusively in UTM coordinates.
+- Remove any mesh operation (clipping, triangulation) in WGS84.
+
+#### 11.4.0 Update Area, Volume, and Thickness Calculations
+##### 11.4.1 (Test First): Write Tests for Metric Calculations
+- Write tests to ensure all area, volume, and thickness calculations are performed in UTM (meters).
+- Compare results to known metric values and ensure no calculation uses WGS84 degrees.
+- Acceptance: All calculations are in metric units, all tests pass.
+##### 11.4.2 (Implementation): Refactor Calculations to Metric Only
+- Ensure all area, volume, and thickness calculations are performed in UTM (meters).
+- Remove any calculation logic that uses WGS84 (degrees) directly.
+
+#### 11.5.0 Update Visualization Pipeline
+##### 11.5.1 (Test First): Write Tests for Visualization Data Consistency
+- Write tests to ensure all data sent to the frontend for visualization is in UTM (or local metric) coordinates.
+- Validate that visualization is accurate and artifact-free.
+- Acceptance: Visualization matches expected metric geometry, all tests pass.
+##### 11.5.2 (Implementation): Refactor Visualization Data Pipeline
+- Ensure all data sent to the frontend for visualization is in UTM (or local metric) coordinates.
+- Update any frontend code that assumes WGS84 input.
+
+#### 11.6.0 Add Robustness and Consistency Checks
+##### 11.6.1 (Test First): Write Tests and Assertions for Projection Consistency
+- Write tests and assertions to ensure that no mesh operation is performed in WGS84.
+- Add checks to verify that all surfaces and boundaries are in the same projection before any operation.
+- Acceptance: Automated tests and runtime assertions pass.
+##### 11.6.2 (Implementation): Add Consistency Checks
+- Implement runtime assertions and checks for projection consistency.
+
+#### 11.7.0 Update Documentation and Developer Guidelines
+##### 11.7.1 (Test First): Write Documentation Tests/Checks
+- Write documentation tests or checklists to ensure developer docs specify the new workflow.
+- Acceptance: Documentation is clear, and all steps are covered.
+##### 11.7.2 (Implementation): Update Developer Documentation
+- Update developer documentation to specify the new workflow: all mesh operations must be in UTM/local metric coordinates, and all input must be projected together before processing.
+
+#### 11.8.0 Regression and Validation Testing
+##### 11.8.1 (Test First): Write Regression and Validation Tests
+- Add or update tests to compare surface area and volume before and after projection to ensure consistency.
+- Validate that no artifacts or distortions are present in the output.
+- Acceptance: All regression and validation tests pass.
+##### 11.8.2 (Implementation): Run and Validate Regression Tests
+- Run all regression and validation tests to confirm correctness and artifact-free output.

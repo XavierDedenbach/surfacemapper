@@ -56,9 +56,9 @@ class TransformationPipeline:
         self.center_surface = center_surface
         
         # Initialize coordinate systems
-        self.wgs84 = pyproj.CRS("EPSG:4326")
+        self.wgs84 = pyproj.CRS.from_epsg(4326)
         self.utm_zone = self._determine_utm_zone()
-        self.utm_crs = pyproj.CRS(self.utm_zone)
+        self.utm_crs = self._create_utm_crs()
         
         # Create transformers
         self.wgs84_to_utm_transformer = pyproj.Transformer.from_crs(
@@ -88,6 +88,16 @@ class TransformationPipeline:
         zone_number = int((self.anchor_lon + 180) / 6) + 1
         hemisphere = "N" if self.anchor_lat >= 0 else "S"
         return f"EPSG:32{6 if hemisphere == 'N' else 7}{zone_number:02d}"
+    
+    def _create_utm_crs(self) -> pyproj.CRS:
+        """Create UTM CRS for the anchor point"""
+        zone_number = int((self.anchor_lon + 180) / 6) + 1
+        hemisphere = "N" if self.anchor_lat >= 0 else "S"
+        try:
+            return pyproj.CRS(f"EPSG:32{6 if hemisphere == 'N' else 7}{zone_number:02d}")
+        except (TypeError, AttributeError):
+            # Fallback to proj string
+            return pyproj.CRS(f"+proj=utm +zone={zone_number} +{'north' if hemisphere == 'N' else 'south'} +datum=WGS84")
     
     def _get_rotation_matrix_z(self, angle_degrees: float) -> np.ndarray:
         """Get 3D rotation matrix around Z-axis"""
@@ -270,7 +280,16 @@ class CoordinateTransformer:
     """
     
     def __init__(self):
-        self.wgs84 = pyproj.CRS("EPSG:4326")
+        try:
+            # Try the newer pyproj API first
+            self.wgs84 = pyproj.CRS.from_epsg(4326)
+        except (TypeError, AttributeError):
+            try:
+                # Fallback to older pyproj API
+                self.wgs84 = pyproj.CRS("EPSG:4326")
+            except Exception as e:
+                # Final fallback
+                self.wgs84 = pyproj.CRS("+proj=longlat +datum=WGS84 +no_defs")
         self.utm_zone = None  # Will be determined based on longitude
     
     def determine_utm_zone(self, longitude: float) -> str:
@@ -318,32 +337,34 @@ class CoordinateTransformer:
             longitude: WGS84 longitude in degrees
             
         Returns:
-            Tuple of (utm_x, utm_y) coordinates in meters
+            Tuple of (utm_x, utm_y) in meters
         """
-        # Validate inputs
-        if not isinstance(latitude, (int, float)) or np.isnan(latitude) or np.isinf(latitude):
-            raise ValueError("Latitude must be a finite number")
+        # Validate input coordinates
+        if not (isinstance(latitude, (int, float)) or np.issubdtype(type(latitude), np.number)) or \
+           not (isinstance(longitude, (int, float)) or np.issubdtype(type(longitude), np.number)):
+            raise ValueError(f"Coordinates must be numeric, got {type(latitude)}, {type(longitude)}")
         
-        if not isinstance(longitude, (int, float)) or np.isnan(longitude) or np.isinf(longitude):
-            raise ValueError("Longitude must be a finite number")
+        if not np.isfinite(latitude) or not np.isfinite(longitude):
+            raise ValueError(f"Coordinates must be finite, got {latitude}, {longitude}")
         
-        if latitude < -90 or latitude > 90:
-            raise ValueError("Latitude must be between -90 and 90 degrees")
+        if not (-90 <= latitude <= 90):
+            raise ValueError(f"Latitude must be between -90 and 90 degrees, got {latitude}")
         
-        if longitude < -180 or longitude > 180:
-            raise ValueError("Longitude must be between -180 and 180 degrees")
-        
-        # Handle edge cases
-        if abs(latitude) == 90:
-            raise ValueError("Pole coordinates are not supported for UTM transformation")
+        if not (-180 <= longitude <= 180):
+            raise ValueError(f"Longitude must be between -180 and 180 degrees, got {longitude}")
         
         # Determine UTM zone and hemisphere
-        zone_number = int((longitude + 180) / 6) + 1
-        hemisphere = "N" if latitude >= 0 else "S"
+        utm_zone = self.determine_utm_zone_with_hemisphere(latitude, longitude)
         
         # Create UTM CRS
-        utm_epsg = f"EPSG:32{6 if hemisphere == 'N' else 7}{zone_number:02d}"
-        utm_crs = pyproj.CRS(utm_epsg)
+        utm_epsg = f"EPSG:32{6 if utm_zone.endswith('N') else 7}{int(utm_zone[:-1]):02d}"
+        try:
+            utm_crs = pyproj.CRS(utm_epsg)
+        except (TypeError, AttributeError):
+            # Fallback to proj string
+            zone_number = int(utm_zone[:-1])
+            hemisphere = utm_zone[-1]
+            utm_crs = pyproj.CRS(f"+proj=utm +zone={zone_number} +{'north' if hemisphere == 'N' else 'south'} +datum=WGS84")
         
         # Create transformer
         transformer = pyproj.Transformer.from_crs(self.wgs84, utm_crs, always_xy=True)
@@ -351,7 +372,49 @@ class CoordinateTransformer:
         # Transform coordinates
         utm_x, utm_y = transformer.transform(longitude, latitude)
         
-        return (utm_x, utm_y)
+        return utm_x, utm_y
+
+    def transform_utm_to_wgs84(self, utm_x: float, utm_y: float, utm_zone: str) -> Tuple[float, float]:
+        """
+        Transform UTM coordinates to WGS84 coordinates
+        
+        Args:
+            utm_x: UTM X coordinate in meters
+            utm_y: UTM Y coordinate in meters
+            utm_zone: UTM zone string (e.g., "18N")
+            
+        Returns:
+            Tuple of (latitude, longitude) in degrees
+        """
+        # Validate input coordinates
+        if not (isinstance(utm_x, (int, float)) or np.issubdtype(type(utm_x), np.number)) or \
+           not (isinstance(utm_y, (int, float)) or np.issubdtype(type(utm_y), np.number)):
+            raise ValueError(f"Coordinates must be numeric, got {type(utm_x)}, {type(utm_y)}")
+        
+        if not np.isfinite(utm_x) or not np.isfinite(utm_y):
+            raise ValueError(f"Coordinates must be finite, got {utm_x}, {utm_y}")
+        
+        # Validate UTM zone format
+        if not isinstance(utm_zone, str) or len(utm_zone) < 2:
+            raise ValueError(f"UTM zone must be a string like '18N', got {utm_zone}")
+        
+        # Create UTM CRS
+        utm_epsg = f"EPSG:32{6 if utm_zone.endswith('N') else 7}{int(utm_zone[:-1]):02d}"
+        try:
+            utm_crs = pyproj.CRS(utm_epsg)
+        except (TypeError, AttributeError):
+            # Fallback to proj string
+            zone_number = int(utm_zone[:-1])
+            hemisphere = utm_zone[-1]
+            utm_crs = pyproj.CRS(f"+proj=utm +zone={zone_number} +{'north' if hemisphere == 'N' else 'south'} +datum=WGS84")
+        
+        # Create transformer (reverse direction)
+        transformer = pyproj.Transformer.from_crs(utm_crs, self.wgs84, always_xy=True)
+        
+        # Transform coordinates
+        longitude, latitude = transformer.transform(utm_x, utm_y)
+        
+        return latitude, longitude
     
     def transform_wgs84_to_utm_batch(self, coordinates: List[Tuple[float, float]]) -> List[Tuple[float, float]]:
         """
@@ -399,7 +462,14 @@ class CoordinateTransformer:
         # Transform each zone group
         results = []
         for utm_epsg, zone_coords in zone_groups.items():
-            utm_crs = pyproj.CRS(utm_epsg)
+            try:
+                utm_crs = pyproj.CRS(utm_epsg)
+            except (TypeError, AttributeError):
+                # Extract zone and hemisphere from EPSG code
+                zone_number = int(utm_epsg[-2:])
+                hemisphere = "N" if utm_epsg[-3] == "6" else "S"
+                utm_crs = pyproj.CRS(f"+proj=utm +zone={zone_number} +{'north' if hemisphere == 'N' else 'south'} +datum=WGS84")
+            
             transformer = pyproj.Transformer.from_crs(self.wgs84, utm_crs, always_xy=True)
             
             # Extract lat/lon arrays

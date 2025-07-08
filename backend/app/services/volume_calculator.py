@@ -22,6 +22,7 @@ class ThicknessResult:
     average_thickness_feet: float
     min_thickness_feet: float
     max_thickness_feet: float
+    std_dev_thickness_feet: float
     confidence_interval: Tuple[float, float]
 
 class VolumeCalculator:
@@ -44,14 +45,15 @@ class VolumeCalculator:
                 raise ValueError("Surface data is missing 'vertices'.")
 
             # Defer to the more robust calculation method
-            volume_diff_cubic_feet = calculate_volume_between_surfaces(
+            volume_diff_cubic_meters = calculate_volume_between_surfaces(
                 surface1,
                 surface2,
                 method="pyvista"
             )
             
-            # Convert from cubic units to cubic yards (assuming input is in feet)
-            volume_diff_cubic_yards = volume_diff_cubic_feet / 27.0
+            # Convert from cubic meters to cubic yards
+            # 1 cubic meter = 1.30795 cubic yards
+            volume_diff_cubic_yards = volume_diff_cubic_meters * 1.30795
             
             # Calculate confidence interval (simplified for now)
             uncertainty = volume_diff_cubic_yards * 0.05  # 5% uncertainty
@@ -100,15 +102,21 @@ class VolumeCalculator:
                     average_thickness_feet=0.0,
                     min_thickness_feet=0.0,
                     max_thickness_feet=0.0,
+                    std_dev_thickness_feet=0.0,
                     confidence_interval=(0.0, 0.0)
                 )
             
-            average_thickness = np.mean(thicknesses)
-            min_thickness = np.min(thicknesses)
-            max_thickness = np.max(thicknesses)
+            # Convert from meters to feet (UTM coordinates are in meters)
+            # 1 meter = 3.28084 feet
+            METERS_TO_FEET = 3.28084
+            thicknesses_feet = thicknesses * METERS_TO_FEET
+            
+            average_thickness = np.mean(thicknesses_feet)
+            min_thickness = np.min(thicknesses_feet)
+            max_thickness = np.max(thicknesses_feet)
             
             # Calculate confidence interval
-            std_thickness = np.std(thicknesses)
+            std_thickness = np.std(thicknesses_feet)
             confidence_interval = (
                 average_thickness - std_thickness,
                 average_thickness + std_thickness
@@ -118,6 +126,7 @@ class VolumeCalculator:
                 average_thickness_feet=average_thickness,
                 min_thickness_feet=min_thickness,
                 max_thickness_feet=max_thickness,
+                std_dev_thickness_feet=std_thickness,
                 confidence_interval=confidence_interval
             )
         except Exception as e:
@@ -126,6 +135,7 @@ class VolumeCalculator:
                 average_thickness_feet=0.0,
                 min_thickness_feet=0.0,
                 max_thickness_feet=0.0,
+                std_dev_thickness_feet=0.0,
                 confidence_interval=(0.0, 0.0)
             )
     
@@ -147,22 +157,25 @@ def calculate_volume_between_surfaces(
     
     Args:
         bottom_surface: 3D points representing bottom surface [N, 3]
-        top_surface: 3D points representing top surface [N, 3]
+        top_surface: 3D points representing top surface [M, 3]
         method: Calculation method ("pyvista" or "prism")
         
     Returns:
         Volume in cubic units (same units as input coordinates)
         
     Raises:
-        ValueError: If surfaces have different number of points or invalid data
+        ValueError: If surfaces are invalid
     """
     if bottom_surface is None or bottom_surface.size == 0 or top_surface is None or top_surface.size == 0:
         raise ValueError("Bottom and top surfaces must be non-empty numpy arrays")
-    if len(bottom_surface) != len(top_surface):
-        raise ValueError("Bottom and top surfaces must have same number of points")
-    if len(bottom_surface) < 3:
+    if len(bottom_surface) < 3 or len(top_surface) < 3:
         logger.warning("Surfaces have fewer than 3 points, returning 0 volume")
         return 0.0
+    
+    # Handle different numbers of points by using interpolation
+    if len(bottom_surface) != len(top_surface):
+        logger.info(f"Surfaces have different point counts ({len(bottom_surface)} vs {len(top_surface)}), using interpolation")
+        return _calculate_volume_with_interpolation(bottom_surface, top_surface, method)
     
     if method == "pyvista":
         return _calculate_volume_pyvista(bottom_surface, top_surface)
@@ -170,6 +183,85 @@ def calculate_volume_between_surfaces(
         return _calculate_volume_prism_method(bottom_surface, top_surface)
     else:
         raise ValueError(f"Unknown method: {method}")
+
+
+def _calculate_volume_with_interpolation(bottom_surface: np.ndarray, top_surface: np.ndarray, method: str) -> float:
+    """
+    Calculate volume between surfaces with different point counts using interpolation.
+    
+    Args:
+        bottom_surface: 3D points representing bottom surface [N, 3]
+        top_surface: 3D points representing top surface [M, 3]
+        method: Calculation method
+        
+    Returns:
+        Volume in cubic units
+    """
+    try:
+        # Use the surface with more points as the reference for triangulation
+        if len(bottom_surface) >= len(top_surface):
+            reference_surface = bottom_surface
+            other_surface = top_surface
+            reference_is_bottom = True
+        else:
+            reference_surface = top_surface
+            other_surface = bottom_surface
+            reference_is_bottom = False
+        
+        # Create triangulation from reference surface
+        cloud = pv.PolyData(reference_surface.astype(np.float32))
+        mesh = cloud.delaunay_2d()
+        
+        if mesh.n_cells == 0:
+            logger.warning("Triangulation failed, falling back to prism method")
+            return _calculate_volume_prism_method(bottom_surface, top_surface)
+        
+        total_volume = 0.0
+        
+        # For each triangle in the reference surface
+        for i in range(mesh.n_cells):
+            triangle = mesh.get_cell(i)
+            triangle_points = triangle.points
+            
+            # Get Z values for this triangle from both surfaces
+            triangle_z_bottom = np.zeros(3)
+            triangle_z_top = np.zeros(3)
+            
+            for j, point in enumerate(triangle_points):
+                # Find closest point in bottom surface
+                distances_bottom = np.sqrt(
+                    (bottom_surface[:, 0] - point[0])**2 + 
+                    (bottom_surface[:, 1] - point[1])**2
+                )
+                closest_bottom_idx = np.argmin(distances_bottom)
+                triangle_z_bottom[j] = bottom_surface[closest_bottom_idx, 2]
+                
+                # Find closest point in top surface
+                distances_top = np.sqrt(
+                    (top_surface[:, 0] - point[0])**2 + 
+                    (top_surface[:, 1] - point[1])**2
+                )
+                closest_top_idx = np.argmin(distances_top)
+                triangle_z_top[j] = top_surface[closest_top_idx, 2]
+            
+            # Calculate triangle area
+            v1 = triangle_points[1] - triangle_points[0]
+            v2 = triangle_points[2] - triangle_points[0]
+            cross_product = np.cross(v1, v2)
+            triangle_area = 0.5 * np.linalg.norm(cross_product)
+            
+            # Calculate average thickness at triangle vertices
+            avg_thickness = np.mean(np.abs(triangle_z_top - triangle_z_bottom))
+            
+            # Volume = area * average thickness
+            triangle_volume = triangle_area * avg_thickness
+            total_volume += triangle_volume
+        
+        return total_volume
+        
+    except Exception as e:
+        logger.error(f"Interpolation-based volume calculation failed: {e}")
+        return _calculate_volume_prism_method(bottom_surface, top_surface)
 
 
 def _calculate_volume_pyvista(bottom_surface: np.ndarray, top_surface: np.ndarray) -> float:

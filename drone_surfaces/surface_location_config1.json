@@ -1,0 +1,31 @@
+{
+  "layer_0": {
+    "tonnage": 0,
+    "georeference": {
+      "wgs84_lat": 40.1496626,
+      "wgs84_lon": -79.85527295,
+      "scaling_factor": 1.0,
+      "orientation": 360
+    }
+  },
+  "layer_1": {
+    "tonnage": 1619,
+    "georeference": {
+      "wgs84_lat": 40.1496626,
+      "wgs84_lon": -79.85527295,
+      "scaling_factor": 1.0,
+      "orientation": 360
+    }
+  },
+  "analysis_boundary": {
+    "coordinates": [
+      { "lat": 40.1499898, "lon": -79.8557882 },
+      { "lat": 40.1499898, "lon": -79.8547577 },
+      { "lat": 40.1493354, "lon": -79.8557882 },
+      { "lat": 40.1493354, "lon": -79.8547577 }
+    ]
+  },
+  "description": "Test configuration for 1619 tons surface analysis",
+  "date": "2025-06-27",
+  "file_type": "shp"
+} 

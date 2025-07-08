@@ -6,9 +6,6 @@
 #
 # CONDA ENVIRONMENT FIXES:
 #   conda install -c conda-forge libstdcxx-ng  # Fixes GLIBCXX_3.4.30 missing library
-#
-# The following line ensures pip builds Fiona and pyproj from source (links to system GDAL):
---no-binary=fiona,pyproj
 
 # Core web framework
 fastapi==0.104.1
@@ -31,9 +28,10 @@ shapely==2.0.3
 
 # 3D processing
 trimesh>=3.20.0
-pyproj==3.6.1
+pyproj==3.5.0
 pyvista==0.43.1
 plyfile==0.7.4
+triangle>=20220324
 
 # Data validation and configuration
 pydantic>=2.6.0

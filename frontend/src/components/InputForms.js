@@ -11,6 +11,7 @@ const LayerForm = ({
   index,
   title, 
   handleFileUpload,
+  handleShpFileUpload,
   handleGeoreferenceChange,
   handleTonnageChange,
   surface,
@@ -22,9 +23,18 @@ const LayerForm = ({
     
     {/* Surface Upload */}
     <div className="mt-4">
-      <label htmlFor={`surface-file-${index}`} className="block text-sm font-medium text-gray-700">Surface File (.ply)</label>
-      <input type="file" id={`surface-file-${index}`} accept=".ply" onChange={(e) => handleFileUpload(e.target.files[0], index)} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
-      {surface && <span className="text-sm text-green-600">Uploaded: {surface.file.name}</span>}
+      <label htmlFor={`surface-file-${index}`} className="block text-sm font-medium text-gray-700">Surface File (.ply or .shp)</label>
+      <input type="file" id={`surface-file-${index}`} accept=".ply,.shp,.shx,.dbf,.prj" multiple onChange={(e) => {
+        const files = Array.from(e.target.files);
+        const hasShp = files.some(f => f.name.toLowerCase().endsWith('.shp'));
+        if (hasShp) {
+          handleShpFileUpload(files, index);
+        } else {
+          handleFileUpload(files[0], index);
+        }
+      }} className="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
+      {surface && surface.files && <span className="text-sm text-green-600">Uploaded: {surface.files.map(f => f.name).join(', ')}</span>}
+      {surface && surface.file && <span className="text-sm text-green-600">Uploaded: {surface.file.name}</span>}
     </div>
     
     {/* Tonnage input */}
@@ -125,6 +135,18 @@ const InputForms = ({
     }
   };
 
+  const handleShpFileUpload = async (files, index) => {
+    if (!files || files.length === 0) return;
+    try {
+      const response = await backendApi.uploadShpFiles(files);
+      const newSurfaces = [...surfaces];
+      newSurfaces[index] = { ...response, files };
+      setSurfaces(newSurfaces);
+    } catch (error) {
+      alert(`Upload failed: ${error.message}`);
+    }
+  };
+
   const handleGeoreferenceChange = (index, field, value) => {
     const updatedParams = [...georeferenceParams];
     if (!updatedParams[index]) updatedParams[index] = {};
@@ -208,6 +230,7 @@ const InputForms = ({
                 index={i}
                 title={`Layer ${i}`}
                 handleFileUpload={handleFileUpload}
+                handleShpFileUpload={handleShpFileUpload}
                 handleGeoreferenceChange={handleGeoreferenceChange}
                 handleTonnageChange={handleTonnageChange}
                 surface={surfaces[i]}

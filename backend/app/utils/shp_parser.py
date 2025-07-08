@@ -8,6 +8,7 @@ import logging
 from shapely.geometry import LineString, Polygon, Point, MultiPoint, MultiLineString
 from shapely.ops import unary_union, linemerge
 from shapely.geometry import box
+from scipy.spatial import cKDTree, Delaunay
 
 logger = logging.getLogger(__name__)
 
@@ -86,51 +87,32 @@ class SHPParser:
         coords = list(linestring.coords)
         if len(coords) < 2:
             return linestring
-        
         # Convert to UTM for accurate distance calculations
         # Determine UTM zone from the first coordinate
-        first_lon, first_lat = coords[0][0], coords[0][1]
-        utm_zone = self._get_utm_zone(first_lat, first_lon)
-        utm_crs = f"EPSG:{utm_zone}"
-        
-        transformer = Transformer.from_crs("EPSG:4326", utm_crs, always_xy=True)
-        
+        first_lat, first_lon = coords[0][1], coords[0][0]
+        utm_epsg = self._get_utm_zone(first_lat, first_lon)
+        transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{utm_epsg}", always_xy=True)
         densified_coords = []
         for i in range(len(coords) - 1):
             start_coord = coords[i]
             end_coord = coords[i + 1]
-            
-            # Add start point
             densified_coords.append(start_coord)
-            
-            # Calculate distance in UTM coordinates
             start_utm = transformer.transform(start_coord[0], start_coord[1])
             end_utm = transformer.transform(end_coord[0], end_coord[1])
-            
             distance_meters = np.sqrt((end_utm[0] - start_utm[0])**2 + (end_utm[1] - start_utm[1])**2)
-            distance_feet = distance_meters * 3.28084  # Convert meters to feet
-            
+            distance_feet = distance_meters * 3.28084
             if distance_feet > max_distance_feet:
-                # Calculate number of intermediate points needed
                 num_segments = int(np.ceil(distance_feet / max_distance_feet))
-                
                 for j in range(1, num_segments):
                     t = j / num_segments
-                    
-                    # Interpolate in WGS84 coordinates
                     lat = start_coord[1] + t * (end_coord[1] - start_coord[1])
                     lon = start_coord[0] + t * (end_coord[0] - start_coord[0])
-                    
-                    # Interpolate elevation if available
                     if len(start_coord) > 2 and len(end_coord) > 2:
                         elev = start_coord[2] + t * (end_coord[2] - start_coord[2])
                         densified_coords.append((lon, lat, elev))
                     else:
                         densified_coords.append((lon, lat))
-        
-        # Add final point
         densified_coords.append(coords[-1])
-        
         return LineString(densified_coords)
 
     def create_polygon_boundary_from_contours(self, linestrings: List[LineString]) -> Polygon:
@@ -231,9 +213,91 @@ class SHPParser:
                     logger.error(f"Method 3 failed: {e3}")
                     raise ValueError("Failed to create polygon boundary from contours")
 
+    def generate_surface_mesh_from_linestrings(self, linestrings: List[LineString], spacing_feet: float = 1.0) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        """
+        Generate a dense surface mesh from LineString contours with specified spacing.
+        
+        Args:
+            linestrings: List of LineString contours
+            spacing_feet: Spacing between points in feet
+            
+        Returns:
+            Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3)
+            and faces is a numpy array of triangle indices
+        """
+        if not linestrings:
+            raise ValueError("No LineString contours provided")
+        
+        logger.info(f"Generating surface mesh from {len(linestrings)} LineStrings with {spacing_feet}ft spacing")
+        
+        # Step 1: Densify all LineStrings to the specified spacing
+        densified_linestrings = []
+        for linestring in linestrings:
+            densified = self.densify_linestring(linestring, spacing_feet)
+            densified_linestrings.append(densified)
+        
+        # Step 2: Collect all points from densified LineStrings
+        all_points = []
+        for linestring in densified_linestrings:
+            coords = list(linestring.coords)
+            for coord in coords:
+                # Ensure 3D coordinates
+                if len(coord) == 2:
+                    all_points.append((coord[0], coord[1], 0.0))
+                else:
+                    all_points.append(coord)
+        
+        logger.info(f"Collected {len(all_points)} points from densified LineStrings")
+        
+        # Step 3: Create a bounding box for the surface area
+        if len(all_points) < 3:
+            raise ValueError("Not enough points to create a surface mesh")
+        
+        points_array = np.array(all_points)
+        min_x, max_x = np.min(points_array[:, 0]), np.max(points_array[:, 0])
+        min_y, max_y = np.min(points_array[:, 1]), np.max(points_array[:, 1])
+        
+        # Step 4: Generate a regular grid within the bounding box
+        # Convert spacing from feet to degrees (approximate)
+        # 1 degree ≈ 111,000 meters ≈ 364,173 feet
+        spacing_degrees = spacing_feet / 364173.0
+        
+        # Create grid coordinates
+        x_coords = np.arange(min_x, max_x + spacing_degrees, spacing_degrees)
+        y_coords = np.arange(min_y, max_y + spacing_degrees, spacing_degrees)
+        
+        # Create meshgrid
+        grid_x, grid_y = np.meshgrid(x_coords, y_coords)
+        
+        # Flatten grid coordinates
+        grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
+        
+        logger.info(f"Generated {len(grid_points)} grid points")
+        
+        # Step 5: Interpolate Z values for grid points using nearest neighbor
+        # Create KD-tree from original points for fast nearest neighbor search
+        original_points_2d = points_array[:, :2]
+        tree = cKDTree(original_points_2d)
+        
+        # Find nearest neighbors and interpolate Z values
+        distances, indices = tree.query(grid_points)
+        interpolated_z = points_array[indices, 2]
+        
+        # Step 6: Create final vertices array
+        vertices = np.column_stack([grid_points, interpolated_z])
+        
+        # Step 7: Generate triangular mesh using Delaunay triangulation
+        # Use only 2D coordinates for triangulation
+        tri = Delaunay(vertices[:, :2])
+        faces = tri.simplices
+        
+        logger.info(f"Generated surface mesh with {len(vertices)} vertices and {len(faces)} faces")
+        
+        return vertices, faces
+
     def process_shp_file(self, file_path: str, max_distance_feet: float = 1.0) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
-        Process a SHP file: parse, densify contours, create polygon boundary, and output as numpy arrays.
+        Process a SHP file: parse, densify contours, generate surface mesh, and output as numpy arrays.
         
         Args:
             file_path: Path to the SHP file
@@ -241,7 +305,7 @@ class SHPParser:
             
         Returns:
             Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3)
-            and faces is None (since we're creating a boundary polygon)
+            and faces is a numpy array of triangle indices
         """
         # Parse the SHP file
         geometries, crs = self.parse_shp_file(file_path)
@@ -251,29 +315,12 @@ class SHPParser:
         other_geometries = [g for g in geometries if not isinstance(g, LineString)]
         
         if linestrings:
-            # Densify LineString contours
-            logger.info(f"Densifying {len(linestrings)} LineString contours...")
-            densified_linestrings = []
-            for linestring in linestrings:
-                densified = self.densify_linestring(linestring, max_distance_feet)
-                densified_linestrings.append(densified)
+            # Generate dense surface mesh from LineString contours
+            logger.info(f"Processing {len(linestrings)} LineString contours...")
+            vertices, faces = self.generate_surface_mesh_from_linestrings(linestrings, max_distance_feet)
             
-            # Create polygon boundary from densified contours
-            logger.info("Creating polygon boundary from densified contours...")
-            boundary_polygon = self.create_polygon_boundary_from_contours(densified_linestrings)
-            
-            # Convert polygon to vertices
-            coords = list(boundary_polygon.exterior.coords)
-            vertices = np.array(coords, dtype=np.float32)
-            
-            # Add z-coordinate if not present
-            if vertices.shape[1] == 2:
-                # Add z=0 for all points
-                z_coords = np.zeros((vertices.shape[0], 1), dtype=np.float32)
-                vertices = np.hstack([vertices, z_coords])
-            
-            logger.info(f"Created boundary polygon with {len(vertices)} vertices")
-            return vertices, None
+            logger.info(f"Generated surface mesh with {len(vertices)} vertices and {len(faces)} faces")
+            return vertices, faces
         
         elif other_geometries:
             # Handle other geometry types (points, polygons)
@@ -416,38 +463,27 @@ class SHPParser:
         """
         if not wgs84_coords:
             raise ValueError("No coordinates provided")
-        
-        # Validate input coordinates
         for i, (lon, lat, z) in enumerate(wgs84_coords):
-            if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)) or not isinstance(z, (int, float)):
+            if not (isinstance(lon, (int, float)) or np.issubdtype(type(lon), np.number)) or \
+               not (isinstance(lat, (int, float)) or np.issubdtype(type(lat), np.number)) or \
+               not (isinstance(z, (int, float)) or np.issubdtype(type(z), np.number)):
                 raise ValueError(f"Coordinates must be numeric, got {type(lon)}, {type(lat)}, {type(z)} at index {i}")
-            
             if not np.isfinite(lon) or not np.isfinite(lat) or not np.isfinite(z):
                 raise ValueError(f"Coordinates must be finite, got {lon}, {lat}, {z} at index {i}")
-            
             if not (-180 <= lon <= 180):
                 raise ValueError(f"Longitude must be between -180 and 180, got {lon} at index {i}")
-            
             if not (-90 <= lat <= 90):
                 raise ValueError(f"Latitude must be between -90 and 90, got {lat} at index {i}")
-        
-        # Determine UTM zone from first coordinate
-        first_lon, first_lat = wgs84_coords[0][0], wgs84_coords[0][1]
-        utm_zone = self._get_utm_zone(first_lat, first_lon)
-        
-        # Validate all coordinates are in the same UTM zone
+        first_lat, first_lon = wgs84_coords[0][1], wgs84_coords[0][0]
+        utm_epsg = self._get_utm_zone(first_lat, first_lon)
         for lon, lat, z in wgs84_coords:
             coord_zone = self._get_utm_zone(lat, lon)
-            if coord_zone != utm_zone:
-                raise ValueError(f"All coordinates must be in the same UTM zone. Expected {utm_zone}, got {coord_zone} for ({lon}, {lat})")
-        
-        # Create transformer
+            if coord_zone != utm_epsg:
+                raise ValueError(f"All coordinates must be in the same UTM zone. Expected {utm_epsg}, got {coord_zone} for ({lon}, {lat})")
         try:
-            transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{utm_zone}", always_xy=True)
+            transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{utm_epsg}", always_xy=True)
         except Exception as e:
             raise ValueError(f"Failed to create coordinate transformer: {e}")
-        
-        # Project coordinates
         utm_coords = []
         for lon, lat, z in wgs84_coords:
             try:
@@ -455,7 +491,6 @@ class SHPParser:
                 utm_coords.append([x, y, z])
             except Exception as e:
                 raise ValueError(f"Failed to project coordinate ({lon}, {lat}, {z}): {e}")
-        
         return np.array(utm_coords, dtype=np.float32)
 
     def _project_to_wgs84(self, utm_coords: np.ndarray, utm_zone: int = None) -> np.ndarray:

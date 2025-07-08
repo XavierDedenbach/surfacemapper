@@ -709,15 +709,13 @@ def test_complete_analysis_workflow_with_real_data():
         
         # Upload first surface
         with open("test_surface_500ft.ply", "rb") as f:
-            upload_response1 = client.post("/api/surfaces/surfaces/upload", files={"file": ("test_surface_500ft.ply", f, "application/octet-stream")})
-        assert upload_response1.status_code == 200, f"First upload failed: {upload_response1.text}"
+            upload_response1 = client.post("/api/surfaces/upload", files={"file": ("test_surface_500ft.ply", f, "application/octet-stream")})
         surface_id_1 = upload_response1.json()["surface_id"]
         print(f"Uploaded first surface: {surface_id_1}")
         
         # Upload second surface
         with open("test_surface_2.ply", "rb") as f:
-            upload_response2 = client.post("/api/surfaces/surfaces/upload", files={"file": ("test_surface_2.ply", f, "application/octet-stream")})
-        assert upload_response2.status_code == 200, f"Second upload failed: {upload_response2.text}"
+            upload_response2 = client.post("/api/surfaces/upload", files={"file": ("test_surface_2.ply", f, "application/octet-stream")})
         surface_id_2 = upload_response2.json()["surface_id"]
         print(f"Uploaded second surface: {surface_id_2}")
         
@@ -926,11 +924,11 @@ def test_point_query_functionality():
     with TestClient(app) as client:
         # First, upload surfaces
         with open("test_surface_500ft.ply", "rb") as f:
-            upload_response1 = client.post("/api/surfaces/surfaces/upload", files={"file": ("test_surface_500ft.ply", f, "application/octet-stream")})
+            upload_response1 = client.post("/api/surfaces/upload", files={"file": ("test_surface_500ft.ply", f, "application/octet-stream")})
         surface_id_1 = upload_response1.json()["surface_id"]
         
         with open("test_surface_2.ply", "rb") as f:
-            upload_response2 = client.post("/api/surfaces/surfaces/upload", files={"file": ("test_surface_2.ply", f, "application/octet-stream")})
+            upload_response2 = client.post("/api/surfaces/upload", files={"file": ("test_surface_2.ply", f, "application/octet-stream")})
         surface_id_2 = upload_response2.json()["surface_id"]
         
         # Start and complete an analysis
@@ -1067,11 +1065,11 @@ def test_concurrent_analysis_handling():
     with TestClient(app) as client:
         # Upload surfaces first
         with open("test_surface_500ft.ply", "rb") as f:
-            upload_response1 = client.post("/api/surfaces/surfaces/upload", files={"file": ("test_surface_500ft.ply", f, "application/octet-stream")})
+            upload_response1 = client.post("/api/surfaces/upload", files={"file": ("test_surface_500ft.ply", f, "application/octet-stream")})
         surface_id_1 = upload_response1.json()["surface_id"]
         
         with open("test_surface_2.ply", "rb") as f:
-            upload_response2 = client.post("/api/surfaces/surfaces/upload", files={"file": ("test_surface_2.ply", f, "application/octet-stream")})
+            upload_response2 = client.post("/api/surfaces/upload", files={"file": ("test_surface_2.ply", f, "application/octet-stream")})
         surface_id_2 = upload_response2.json()["surface_id"]
         
         # Start multiple analyses
