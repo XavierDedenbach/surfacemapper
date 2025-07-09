@@ -205,4 +205,18 @@ metadata:
   description: "Default processing parameters for Surface Mapper"
   last_updated: "2024-12-19"
   author: "Surface Mapper Development Team"
-  notes: "These parameters can be overridden by user input or project-specific configurations" 
+  notes: "These parameters can be overridden by user input or project-specific configurations"
+
+coordinate_system:
+  default_projection: "EPSG:32617"  # UTM Zone 17N
+  required_for_mesh_operations: "UTM"
+  validation_enabled: true
+  warning_threshold: 180  # degrees
+
+projection:
+  shp_workflow:
+    project_immediately: true
+    project_mesh_and_boundary_together: true
+  ply_workflow:
+    validate_utm_input: true
+    project_boundary_if_needed: true 

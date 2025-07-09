@@ -4,6 +4,46 @@
 
 This document provides detailed specifications for the algorithms used in the Surface Volume and Layer Thickness Analysis Tool. These algorithms are designed to provide accurate volume calculations, thickness measurements, and compaction rate analysis for surface topology changes.
 
+## Coordinate System Requirements
+
+All mesh operations (clipping, triangulation, area, and volume calculations) must be performed in UTM coordinates (meters). No mesh operation should be performed in WGS84 coordinates (degrees).
+
+**Note:** All SHP workflows require explicit WGS84 to UTM projection before any mesh operations. All mesh and boundary data must be projected from WGS84 to UTM together.
+
+### SHP Workflow
+1. Load SHP file in WGS84 coordinates
+2. Project both mesh and boundary to UTM together (project together)
+3. Perform all mesh operations in UTM coordinates
+4. Calculate area and volume in UTM coordinates
+5. No mesh operations in WGS84 (degrees); all mesh operations must be performed in UTM (meters).
+
+### PLY Workflow
+1. Load PLY file (already in UTM coordinates)
+2. Project boundary to UTM if needed
+3. Perform all mesh operations in UTM coordinates
+4. Calculate area and volume in UTM coordinates
+
+### Validation
+- All mesh operations validate coordinate system
+- Warnings are logged for WGS84 coordinates
+- Calculations assume UTM coordinates (meters)
+- SHP workflow must project mesh and boundary together before mesh operations (project together)
+
+### Example: Projecting Mesh and Boundary Together to UTM
+
+```python
+from pyproj import Transformer
+# Example: Project mesh and boundary together to UTM before mesh operations
+wgs84_vertices = [(lon1, lat1, z1), (lon2, lat2, z2), ...]
+boundary_wgs84 = [(lonA, latA), (lonB, latB), ...]
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:32617", always_xy=True)
+vertices_utm = [(*transformer.transform(lon, lat), z) for lon, lat, z in wgs84_vertices]
+boundary_utm = [transformer.transform(lon, lat) for lon, lat in boundary_wgs84]
+# Now perform mesh operations (clipping, triangulation, area, volume) in UTM
+```
+
+All mesh operations must be performed in UTM coordinates. Never perform mesh operations in WGS84 (degrees).
+
 ## 1. Volume Calculation Algorithms
 
 ### 1.1 Delaunay Triangulation-Based Volume Calculation (DTVC)

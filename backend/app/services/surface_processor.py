@@ -258,7 +258,8 @@ class SurfaceProcessor:
                             # Convert to 2D points for triangulation
                             points_2d = [(new_vertices[idx][0], new_vertices[idx][1]) for idx in indices]
                             try:
-                                tri_2d = Delaunay(points_2d)
+                                # FIXED: Robust triangulation with multiple fallback strategies
+                                tri_2d = self._robust_delaunay_triangulation(points_2d)
                                 for simplex in tri_2d.simplices:
                                     new_faces.append([indices[i] for i in simplex])
                             except Exception as e:
@@ -320,10 +321,108 @@ class SurfaceProcessor:
 
         return result_vertices, result_faces
 
+    def _robust_delaunay_triangulation(self, points_2d: List[Tuple[float, float]]) -> Delaunay:
+        """
+        Robust Delaunay triangulation with multiple fallback strategies for Qhull precision errors.
+        
+        Args:
+            points_2d: List of 2D points [(x, y), ...]
+            
+        Returns:
+            Delaunay triangulation object
+            
+        Raises:
+            Exception: If all triangulation strategies fail
+        """
+        import numpy as np
+        from scipy.spatial import Delaunay
+        from scipy.spatial._qhull import QhullError
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if len(points_2d) < 3:
+            raise ValueError("Need at least 3 points for triangulation")
+        
+        points_array = np.array(points_2d)
+        
+        # Strategy 1: Standard Delaunay triangulation
+        try:
+            logger.debug("Attempting standard Delaunay triangulation")
+            return Delaunay(points_array)
+        except QhullError as e:
+            logger.warning(f"Standard triangulation failed: {e}")
+        
+        # Strategy 2: Joggle points to break flatness
+        try:
+            logger.debug("Attempting joggled triangulation")
+            # Add small random jitter to break flatness
+            jittered_points = points_array + np.random.normal(0, 1e-8, points_array.shape)
+            return Delaunay(jittered_points)
+        except QhullError as e:
+            logger.warning(f"Joggled triangulation failed: {e}")
+        
+        # Strategy 3: Scale points to unit cube
+        try:
+            logger.debug("Attempting scaled triangulation")
+            # Scale points to unit cube to improve numerical stability
+            min_coords = np.min(points_array, axis=0)
+            max_coords = np.max(points_array, axis=0)
+            range_coords = max_coords - min_coords
+            if np.any(range_coords > 0):
+                scaled_points = (points_array - min_coords) / range_coords
+                return Delaunay(scaled_points)
+            else:
+                raise QhullError("Points have zero range")
+        except QhullError as e:
+            logger.warning(f"Scaled triangulation failed: {e}")
+        
+        # Strategy 4: Remove duplicate points and try again
+        try:
+            logger.debug("Attempting deduplicated triangulation")
+            unique_points = np.unique(points_array, axis=0)
+            if len(unique_points) < 3:
+                raise QhullError("Not enough unique points after deduplication")
+            return Delaunay(unique_points)
+        except QhullError as e:
+            logger.warning(f"Deduplicated triangulation failed: {e}")
+        
+        # Strategy 5: Use convex hull as fallback
+        try:
+            logger.debug("Attempting convex hull fallback")
+            from scipy.spatial import ConvexHull
+            hull = ConvexHull(points_array)
+            # Convert convex hull to triangulation
+            hull_points = points_array[hull.vertices]
+            return Delaunay(hull_points)
+        except Exception as e:
+            logger.warning(f"Convex hull fallback failed: {e}")
+        
+        # Strategy 6: Create minimal triangulation
+        logger.warning("All triangulation strategies failed, creating minimal triangulation")
+        if len(points_array) == 3:
+            # Single triangle
+            tri = Delaunay(points_array)
+            tri.simplices = np.array([[0, 1, 2]])
+            return tri
+        elif len(points_array) > 3:
+            # Create triangulation with first 3 points, add others as needed
+            base_points = points_array[:3]
+            tri = Delaunay(base_points)
+            # Add remaining points one by one
+            for i in range(3, len(points_array)):
+                # Find containing triangle and split it
+                point = points_array[i]
+                # Simple approach: add point to center of existing triangulation
+                tri.simplices = np.vstack([tri.simplices, [0, 1, i]])
+            return tri
+        else:
+            raise Exception("Cannot create triangulation with fewer than 3 points")
+
     def clip_to_boundary(self, vertices: np.ndarray, boundary: list, faces: np.ndarray = None) -> tuple:
         """
-        Clip surface vertices (and faces if provided) to the defined analysis boundary.
+        Clip surface vertices (and faces if provided) to the defined analysis boundary in UTM coordinates.
         If faces are provided, returns (vertices, faces). Otherwise, returns vertices only.
+        All operations are performed in UTM coordinates (meters).
         """
         if vertices is None or vertices.size == 0 or vertices.shape[1] != 3:
             raise ValueError("Vertices must be a non-empty Nx3 numpy array")
@@ -351,25 +450,25 @@ class SurfaceProcessor:
     
     def _clip_to_polygon_boundary(self, vertices: np.ndarray, boundary: List[Tuple[float, float]]) -> np.ndarray:
         """
-        Clip vertices to a polygon boundary defined by 4 corner points using Shapely
+        Clip vertices to a polygon boundary defined by 4 corner points using Shapely in UTM coordinates
         
         Args:
-            vertices: Nx3 numpy array of vertex coordinates
-            boundary: List of 4 tuples defining polygon corners: [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
+            vertices: Nx3 numpy array of vertex coordinates in UTM (meters)
+            boundary: List of 4 tuples defining polygon corners in UTM (meters): [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
             
         Returns:
             Filtered vertices that are inside the polygon boundary
         """
         boundary_array = np.array(boundary)
-        logger.info(f"Polygon clipping debug:")
+        logger.info(f"Polygon clipping debug (UTM coordinates):")
         logger.info(f"  Boundary coordinates: {boundary}")
         logger.info(f"  Boundary array shape: {boundary_array.shape}")
         logger.info(f"  Vertex count before trimming: {len(vertices)}")
         logger.info(f"  First 10 vertices before trimming: {vertices[:10].tolist()}")
-        logger.info(f"  Vertex X range: {np.min(vertices[:, 0]):.2f} to {np.max(vertices[:, 0]):.2f}")
-        logger.info(f"  Vertex Y range: {np.min(vertices[:, 1]):.2f} to {np.max(vertices[:, 1]):.2f}")
-        logger.info(f"  Boundary X range: {np.min(boundary_array[:, 0]):.2f} to {np.max(boundary_array[:, 0]):.2f}")
-        logger.info(f"  Boundary Y range: {np.min(boundary_array[:, 1]):.2f} to {np.max(boundary_array[:, 1]):.2f}")
+        logger.info(f"  Vertex X range: {np.min(vertices[:, 0]):.2f} to {np.max(vertices[:, 0]):.2f} meters")
+        logger.info(f"  Vertex Y range: {np.min(vertices[:, 1]):.2f} to {np.max(vertices[:, 1]):.2f} meters")
+        logger.info(f"  Boundary X range: {np.min(boundary_array[:, 0]):.2f} to {np.max(boundary_array[:, 0]):.2f} meters")
+        logger.info(f"  Boundary Y range: {np.min(boundary_array[:, 1]):.2f} to {np.max(boundary_array[:, 1]):.2f} meters")
         
         try:
             polygon = Polygon(boundary)

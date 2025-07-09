@@ -228,15 +228,24 @@ end_header
         if not os.path.exists(self.real_shp_file):
             pytest.skip(f"Real SHP file not found at {self.real_shp_file}")
         
-        # Process SHP file (should be in WGS84)
+        # Process SHP file (now returns UTM coordinates)
         shp_vertices, _ = self.shp_parser.process_shp_file(self.real_shp_file)
         
-        # Verify coordinates are in WGS84 range
-        assert np.all(shp_vertices[:, 0] >= -180) and np.all(shp_vertices[:, 0] <= 180)  # longitude
-        assert np.all(shp_vertices[:, 1] >= -90) and np.all(shp_vertices[:, 1] <= 90)    # latitude
+        # Verify coordinates are in UTM range (meters, not degrees)
+        assert np.all(shp_vertices[:, 0] > 10000)  # UTM X should be positive and reasonable
+        assert np.all(shp_vertices[:, 1] > 1000000)  # UTM Y should be positive and reasonable
+        assert np.all(shp_vertices[:, 0] < 1000000)  # Reasonable UTM X range
+        assert np.all(shp_vertices[:, 1] < 10000000)  # Reasonable UTM Y range
         
-        # Test projection to UTM
-        utm_vertices = self.shp_parser.project_to_utm(shp_vertices)
+        # Test that we can still project WGS84 coordinates to UTM if needed
+        # Create some test WGS84 coordinates
+        test_wgs84_vertices = np.array([
+            [-82.0, 28.0, 0.0],
+            [-81.9, 28.1, 0.0],
+            [-81.8, 28.2, 0.0]
+        ], dtype=np.float32)
+        
+        utm_vertices = self.shp_parser.project_to_utm(test_wgs84_vertices)
         
         # Verify UTM coordinates are reasonable (positive, in meters)
         assert np.all(utm_vertices[:, 0] > 0)  # UTM X should be positive

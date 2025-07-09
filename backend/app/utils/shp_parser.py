@@ -215,56 +215,58 @@ class SHPParser:
 
     def generate_surface_mesh_from_linestrings(self, linestrings: List[LineString], spacing_feet: float = 1.0) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
-        Generate a dense surface mesh from LineString contours with specified spacing.
+        Generate a dense surface mesh from LineString contours with specified spacing in UTM coordinates.
         
         Args:
-            linestrings: List of LineString contours
+            linestrings: List of LineString contours in WGS84 coordinates
             spacing_feet: Spacing between points in feet
             
         Returns:
-            Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3)
+            Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3) in UTM meters
             and faces is a numpy array of triangle indices
         """
         if not linestrings:
             raise ValueError("No LineString contours provided")
         
-        logger.info(f"Generating surface mesh from {len(linestrings)} LineStrings with {spacing_feet}ft spacing")
+        logger.info(f"Generating surface mesh from {len(linestrings)} LineStrings with {spacing_feet}ft spacing in UTM coordinates")
         
-        # Step 1: Densify all LineStrings to the specified spacing
+        # Step 1: Densify all LineStrings to the specified spacing (in WGS84)
         densified_linestrings = []
         for linestring in linestrings:
             densified = self.densify_linestring(linestring, spacing_feet)
             densified_linestrings.append(densified)
         
-        # Step 2: Collect all points from densified LineStrings
-        all_points = []
+        # Step 2: Collect all points from densified LineStrings and project to UTM
+        all_points_wgs84 = []
         for linestring in densified_linestrings:
             coords = list(linestring.coords)
             for coord in coords:
                 # Ensure 3D coordinates
                 if len(coord) == 2:
-                    all_points.append((coord[0], coord[1], 0.0))
+                    all_points_wgs84.append((coord[0], coord[1], 0.0))
                 else:
-                    all_points.append(coord)
+                    all_points_wgs84.append(coord)
         
-        logger.info(f"Collected {len(all_points)} points from densified LineStrings")
+        logger.info(f"Collected {len(all_points_wgs84)} points from densified LineStrings")
         
-        # Step 3: Create a bounding box for the surface area
-        if len(all_points) < 3:
+        # Step 3: Project all points to UTM coordinates
+        all_points_utm = self._project_to_utm(all_points_wgs84)
+        logger.info(f"Projected {len(all_points_utm)} points to UTM coordinates")
+        
+        # Step 4: Create a bounding box for the surface area in UTM
+        if len(all_points_utm) < 3:
             raise ValueError("Not enough points to create a surface mesh")
         
-        points_array = np.array(all_points)
-        min_x, max_x = np.min(points_array[:, 0]), np.max(points_array[:, 0])
-        min_y, max_y = np.min(points_array[:, 1]), np.max(points_array[:, 1])
+        min_x, max_x = np.min(all_points_utm[:, 0]), np.max(all_points_utm[:, 0])
+        min_y, max_y = np.min(all_points_utm[:, 1]), np.max(all_points_utm[:, 1])
         
-        # Step 4: Generate a regular grid within the bounding box
-        # Convert spacing from feet to degrees (approximate)
-        # 1 degree ≈ 111,000 meters ≈ 364,173 feet
-        spacing_degrees = spacing_feet / 364173.0
+        # Step 5: Generate a regular grid within the bounding box in UTM meters
+        # Convert spacing from feet to meters
+        spacing_meters = spacing_feet * 0.3048  # 1 foot = 0.3048 meters
         
-        # Create grid coordinates
-        x_coords = np.arange(min_x, max_x + spacing_degrees, spacing_degrees)
-        y_coords = np.arange(min_y, max_y + spacing_degrees, spacing_degrees)
+        # Create grid coordinates in UTM meters
+        x_coords = np.arange(min_x, max_x + spacing_meters, spacing_meters)
+        y_coords = np.arange(min_y, max_y + spacing_meters, spacing_meters)
         
         # Create meshgrid
         grid_x, grid_y = np.meshgrid(x_coords, y_coords)
@@ -272,39 +274,42 @@ class SHPParser:
         # Flatten grid coordinates
         grid_points = np.vstack([grid_x.ravel(), grid_y.ravel()]).T
         
-        logger.info(f"Generated {len(grid_points)} grid points")
+        logger.info(f"Generated {len(grid_points)} grid points in UTM coordinates")
         
-        # Step 5: Interpolate Z values for grid points using nearest neighbor
-        # Create KD-tree from original points for fast nearest neighbor search
-        original_points_2d = points_array[:, :2]
-        tree = cKDTree(original_points_2d)
+        # Step 6: Interpolate Z values for grid points using nearest neighbor in UTM
+        # Create KD-tree from original UTM points for fast nearest neighbor search
+        original_points_2d_utm = all_points_utm[:, :2]
+        tree = cKDTree(original_points_2d_utm)
         
         # Find nearest neighbors and interpolate Z values
         distances, indices = tree.query(grid_points)
-        interpolated_z = points_array[indices, 2]
+        interpolated_z = all_points_utm[indices, 2]
         
-        # Step 6: Create final vertices array
+        # Step 7: Create final vertices array in UTM coordinates
         vertices = np.column_stack([grid_points, interpolated_z])
         
-        # Step 7: Generate triangular mesh using Delaunay triangulation
-        # Use only 2D coordinates for triangulation
+        # Step 8: Generate triangular mesh using Delaunay triangulation in UTM coordinates
+        # Use only 2D coordinates for triangulation (UTM X, Y)
         tri = Delaunay(vertices[:, :2])
         faces = tri.simplices
         
-        logger.info(f"Generated surface mesh with {len(vertices)} vertices and {len(faces)} faces")
+        logger.info(f"Generated surface mesh with {len(vertices)} vertices and {len(faces)} faces in UTM coordinates")
+        logger.info(f"UTM coordinate ranges: X={vertices[:, 0].min():.1f}-{vertices[:, 0].max():.1f}m, "
+                   f"Y={vertices[:, 1].min():.1f}-{vertices[:, 1].max():.1f}m, "
+                   f"Z={vertices[:, 2].min():.1f}-{vertices[:, 2].max():.1f}m")
         
         return vertices, faces
 
     def process_shp_file(self, file_path: str, max_distance_feet: float = 1.0) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
-        Process a SHP file: parse, densify contours, generate surface mesh, and output as numpy arrays.
+        Process a SHP file: parse, densify contours, generate surface mesh, and output as numpy arrays in UTM coordinates.
         
         Args:
             file_path: Path to the SHP file
             max_distance_feet: Maximum distance between points for densification
             
         Returns:
-            Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3)
+            Tuple of (vertices, faces) where vertices is a numpy array of shape (N, 3) in UTM meters
             and faces is a numpy array of triangle indices
         """
         # Parse the SHP file
@@ -315,31 +320,36 @@ class SHPParser:
         other_geometries = [g for g in geometries if not isinstance(g, LineString)]
         
         if linestrings:
-            # Generate dense surface mesh from LineString contours
-            logger.info(f"Processing {len(linestrings)} LineString contours...")
+            # Generate dense surface mesh from LineString contours in UTM coordinates
+            logger.info(f"Processing {len(linestrings)} LineString contours in UTM coordinates...")
             vertices, faces = self.generate_surface_mesh_from_linestrings(linestrings, max_distance_feet)
             
-            logger.info(f"Generated surface mesh with {len(vertices)} vertices and {len(faces)} faces")
+            logger.info(f"Generated surface mesh with {len(vertices)} vertices and {len(faces)} faces in UTM coordinates")
             return vertices, faces
         
         elif other_geometries:
-            # Handle other geometry types (points, polygons)
-            all_vertices = []
+            # Handle other geometry types (points, polygons) - project to UTM
+            all_vertices_wgs84 = []
             for geom in other_geometries:
                 if isinstance(geom, Point):
                     coords = list(geom.coords)
-                    all_vertices.extend(coords)
+                    all_vertices_wgs84.extend(coords)
                 elif isinstance(geom, Polygon):
                     coords = list(geom.exterior.coords)
-                    all_vertices.extend(coords)
+                    all_vertices_wgs84.extend(coords)
             
-            if all_vertices:
-                vertices = np.array(all_vertices, dtype=np.float32)
-                # Add z-coordinate if not present
-                if vertices.shape[1] == 2:
-                    z_coords = np.zeros((vertices.shape[0], 1), dtype=np.float32)
-                    vertices = np.hstack([vertices, z_coords])
-                return vertices, None
+            if all_vertices_wgs84:
+                # Convert to numpy array and ensure 3D coordinates
+                vertices_wgs84 = np.array(all_vertices_wgs84, dtype=np.float32)
+                if vertices_wgs84.shape[1] == 2:
+                    z_coords = np.zeros((vertices_wgs84.shape[0], 1), dtype=np.float32)
+                    vertices_wgs84 = np.hstack([vertices_wgs84, z_coords])
+                
+                # Project to UTM coordinates
+                vertices_utm = self.project_to_utm(vertices_wgs84)
+                logger.info(f"Projected {len(vertices_utm)} vertices from WGS84 to UTM coordinates")
+                
+                return vertices_utm, None
         
         # If no valid geometries found
         raise ValueError("No valid geometries found in SHP file")
@@ -448,6 +458,26 @@ class SHPParser:
 
     # Minor Task 10.2.2: SHP to UTM Projection and Preparation Methods
     
+    def project_to_utm(self, wgs84_vertices: np.ndarray) -> np.ndarray:
+        """
+        Project WGS84 vertices to UTM coordinates.
+        
+        Args:
+            wgs84_vertices: numpy array of shape (N, 3) with (lon, lat, z) coordinates in WGS84 degrees
+            
+        Returns:
+            numpy array of shape (N, 3) with (x, y, z) coordinates in UTM meters
+            
+        Raises:
+            ValueError: If coordinates are invalid or span multiple UTM zones
+        """
+        if wgs84_vertices is None or len(wgs84_vertices) == 0:
+            raise ValueError("No vertices provided")
+        
+        # Convert numpy array to list of tuples for projection
+        wgs84_coords = [(row[0], row[1], row[2]) for row in wgs84_vertices]
+        return self._project_to_utm(wgs84_coords)
+
     def _project_to_utm(self, wgs84_coords: List[Tuple[float, float, float]]) -> np.ndarray:
         """
         Project WGS84 coordinates to UTM coordinates.

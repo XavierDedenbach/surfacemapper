@@ -147,25 +147,37 @@ class VolumeCalculator:
             return 0.0
         return (tonnage * 2000) / volume_cubic_yards 
 
+def _validate_utm_coordinates(surface_points: np.ndarray, context: str = ""):
+    """
+    Validate that surface points are in UTM (meters). If points appear to be in WGS84 (degrees), log a warning.
+    """
+    if surface_points is None or len(surface_points) == 0:
+        return
+    x = surface_points[:, 0]
+    y = surface_points[:, 1]
+    # If all x in [-180, 180] and all y in [-90, 90], likely WGS84
+    if np.all(np.abs(x) <= 180) and np.all(np.abs(y) <= 90):
+        logger.warning(f"{context}: Input coordinates appear to be in WGS84 degrees, not UTM meters. Calculations may be invalid. All mesh operations require UTM.")
+
 def calculate_volume_between_surfaces(
     bottom_surface: np.ndarray, 
     top_surface: np.ndarray,
     method: str = "pyvista"
 ) -> float:
     """
-    Calculate volume between two surfaces using PyVista mesh operations.
-    
+    Calculate volume between two surfaces using PyVista mesh operations in UTM coordinates.
+    Warn if coordinates appear to be in WGS84 (degrees).
     Args:
-        bottom_surface: 3D points representing bottom surface [N, 3]
-        top_surface: 3D points representing top surface [M, 3]
+        bottom_surface: 3D points representing bottom surface [N, 3] in UTM (meters)
+        top_surface: 3D points representing top surface [M, 3] in UTM (meters)
         method: Calculation method ("pyvista" or "prism")
-        
     Returns:
-        Volume in cubic units (same units as input coordinates)
-        
+        Volume in cubic meters (UTM coordinates are in meters)
     Raises:
         ValueError: If surfaces are invalid
     """
+    _validate_utm_coordinates(bottom_surface, context="calculate_volume_between_surfaces: bottom_surface")
+    _validate_utm_coordinates(top_surface, context="calculate_volume_between_surfaces: top_surface")
     if bottom_surface is None or bottom_surface.size == 0 or top_surface is None or top_surface.size == 0:
         raise ValueError("Bottom and top surfaces must be non-empty numpy arrays")
     if len(bottom_surface) < 3 or len(top_surface) < 3:
@@ -646,14 +658,14 @@ def create_sine_wave_surface(amplitude: float = 2.0, wavelength: float = 10.0, s
 
 def calculate_surface_area(surface_points: np.ndarray) -> float:
     """
-    Calculate approximate surface area of a point cloud surface.
-    
+    Calculate surface area for a set of 3D points in UTM coordinates.
+    Warn if coordinates appear to be in WGS84 (degrees).
     Args:
-        surface_points: 3D points representing surface [N, 3]
-        
+        surface_points: 3D points [N, 3] in UTM (meters)
     Returns:
-        Approximate surface area
+        Area in square meters
     """
+    _validate_utm_coordinates(surface_points, context="calculate_surface_area")
     if len(surface_points) < 3:
         return 0.0
     
@@ -718,13 +730,13 @@ def optimize_mesh_quality(mesh: pv.PolyData, target_cells: Optional[int] = None)
 
 def calculate_real_surface_area(surface_points: np.ndarray) -> float:
     """
-    Calculate real surface area using triangulation.
+    Calculate real surface area using triangulation in UTM coordinates.
     
     Args:
-        surface_points: 3D points representing surface [N, 3]
+        surface_points: 3D points representing surface [N, 3] in UTM (meters)
         
     Returns:
-        Real surface area in square units
+        Real surface area in square meters (UTM coordinates are in meters)
     """
     if len(surface_points) < 3:
         return 0.0

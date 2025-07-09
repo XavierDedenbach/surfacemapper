@@ -6,6 +6,15 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
  * ThreeDViewer component for 3D surface visualization using Three.js
  * Renders surfaces stacked vertically according to their Z-coordinates
  */
+
+// Utility to validate UTM coordinates
+export function validateUTMCoordinates(vertices) {
+  if (!vertices || vertices.length === 0) return false;
+  const xs = vertices.map(v => v[0]);
+  const ys = vertices.map(v => v[1]);
+  return xs.every(x => Math.abs(x) > 180) && ys.every(y => Math.abs(y) > 90);
+}
+
 const ThreeDViewer = ({ 
   analysisResult,
   onPointHover, 
@@ -155,6 +164,20 @@ const ThreeDViewer = ({
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Coordinate system validation (only in browser, not in test/SSR)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    if (!surfaces || surfaces.length === 0) return;
+    surfaces.forEach((surface, index) => {
+      if (surface.vertices && surface.vertices.length > 0) {
+        const isUTM = validateUTMCoordinates(surface.vertices);
+        if (!isUTM) {
+          console.warn(`WGS84 coordinates detected in surface ${index}. Visualization expects UTM (meters).`);
+        }
+      }
+    });
+  }, [surfaces]);
 
   // Render surfaces
   useEffect(() => {

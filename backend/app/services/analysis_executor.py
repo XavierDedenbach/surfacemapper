@@ -1,7 +1,7 @@
 import time
 import uuid
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import HTTPException
 from app.utils.serialization import make_json_serializable, validate_json_serializable, clean_floats_for_json
 from app.services.surface_processor import SurfaceProcessor
@@ -133,11 +133,11 @@ class AnalysisExecutor:
 
             # --- Apply Transformation Pipeline ---
             if file_type.upper() == 'SHP':
-                # SHP files are in WGS84 coordinates, no transformation needed yet
-                # They will be converted to UTM after clipping
+                # SHP files are in WGS84 coordinates, keep in WGS84 for now
+                # Both mesh and boundary will be projected to UTM together later
                 transformed_vertices = vertices
-                print(f"DEBUG: SHP file - no transformation applied, vertices: {len(transformed_vertices)}")
-                logger.info(f"[{analysis_id}] SHP file in WGS84 coordinates, will convert to UTM after clipping")
+                print(f"DEBUG: SHP file - keeping in WGS84 for now, vertices: {len(transformed_vertices)}")
+                logger.info(f"[{analysis_id}] SHP file in WGS84 coordinates, will project to UTM with boundary together")
             else:
                 # Apply transformation for PLY files
                 print(f"DEBUG: Applying transformation to PLY file")
@@ -228,69 +228,103 @@ class AnalysisExecutor:
                 print(f"DEBUG: Boundary clipping WILL PROCEED - area is large enough")
                 print(f"DEBUG: Boundary coordinates: {wgs84_boundary}")
                 print(f"DEBUG: Lat range: {lat_range:.6f}, Lon range: {lon_range:.6f}")
-                # Apply boundary clipping to all surfaces in WGS84 coordinates
+                # REFACTORED: Project both mesh and boundary to UTM together before any mesh operations
+                print(f"DEBUG: Projecting boundary to UTM for consistent coordinate system")
+                logger.info(f"[{analysis_id}] Projecting boundary to UTM for consistent coordinate system")
+                
+                # Convert boundary from [lat, lon] to [lon, lat] format and project to UTM
+                # FIXED: Process all boundary points instead of limiting to 4
+                boundary_lon_lat = [[coord[1], coord[0]] for coord in wgs84_boundary]
+                
+                # SOLUTION 2: Validate and fix boundary using new robust validation
+                try:
+                    boundary_lon_lat = self._validate_and_fix_boundary(boundary_lon_lat)
+                    logger.info(f"[{analysis_id}] Boundary validation successful")
+                except Exception as e:
+                    logger.error(f"[{analysis_id}] Boundary validation failed: {e}")
+                    # Create a simple bounding box as fallback
+                    boundary_array = np.array(wgs84_boundary)
+                    min_lat, min_lon = np.min(boundary_array, axis=0)
+                    max_lat, max_lon = np.max(boundary_array, axis=0)
+                    boundary_lon_lat = [
+                        [min_lon, min_lat],
+                        [max_lon, min_lat],
+                        [max_lon, max_lat],
+                        [min_lon, max_lat],
+                        [min_lon, min_lat]  # Close the polygon
+                    ]
+                    logger.info(f"[{analysis_id}] Created fallback bounding box boundary: {boundary_lon_lat}")
+                
+                # SOLUTION 1: Determine UTM zone from boundary coordinates instead of hardcoded
+                utm_zone = self._determine_utm_zone_from_boundary(boundary_lon_lat)
+                logger.info(f"[{analysis_id}] Determined UTM zone {utm_zone} from boundary coordinates")
+                
+                # Create transformer for the determined UTM zone
+                from pyproj import Transformer
+                transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{utm_zone}", always_xy=True)
+                
+                utm_boundary = []
+                for lon, lat in boundary_lon_lat:
+                    utm_x, utm_y = transformer.transform(lon, lat)
+                    utm_boundary.append((utm_x, utm_y))
+                
+                print(f"DEBUG: Boundary projected to UTM: {utm_boundary}")
+                logger.info(f"[{analysis_id}] Boundary projected to UTM: {utm_boundary}")
+                
+                # Apply boundary clipping to all surfaces in UTM coordinates
                 for i, surface in enumerate(surfaces_to_process):
                     print(f"DEBUG: Starting boundary clipping for surface {i+1}")
                     original_vertex_count = len(surface['vertices'])
                     print(f"DEBUG: Surface {i+1} original vertices: {original_vertex_count}")
-                    logger.info(f"[{analysis_id}] Clipping surface {i+1} from {original_vertex_count} vertices in WGS84")
+                    logger.info(f"[{analysis_id}] Clipping surface {i+1} from {original_vertex_count} vertices in UTM")
                     
-                    # Check if this is a SHP file (already in WGS84) or PLY file (needs conversion)
+                    # Check if this is a SHP file (needs conversion to UTM) or PLY file (already in UTM)
                     file_type = surface.get('file_type', 'PLY').upper()
                     print(f"DEBUG: Surface {i+1} file type: {file_type}")
                     
                     if file_type == 'SHP':
-                        # SHP files are already in WGS84 coordinates, clip directly
-                        print(f"DEBUG: Surface {i+1} is SHP file, clipping vertices to boundary first")
-                        logger.info(f"[{analysis_id}] Surface {i+1} is SHP file, clipping vertices to boundary first")
+                        # SHP files are in WGS84 coordinates, convert to UTM first
+                        print(f"DEBUG: Surface {i+1} is SHP file, converting to UTM first")
+                        logger.info(f"[{analysis_id}] Surface {i+1} is SHP file, converting to UTM first")
                         
-                        # Convert boundary from [lat, lon] to [lon, lat] format to match vertex format
-                        # Ensure we have exactly 4 coordinates for polygon clipping
-                        boundary_lon_lat = [[coord[1], coord[0]] for coord in wgs84_boundary[:4]]  # Take first 4 points
-                        print(f"DEBUG: Converted boundary from [lat, lon] to [lon, lat]: {boundary_lon_lat}")
-                        logger.info(f"[{analysis_id}] Converted boundary from [lat, lon] to [lon, lat]: {boundary_lon_lat}")
+                        # Convert vertices from WGS84 to UTM using the same UTM zone as the boundary
+                        utm_vertices = self._convert_wgs84_to_utm(surface['vertices'], utm_zone)
+                        print(f"DEBUG: Converted SHP vertices to UTM: {len(utm_vertices)}")
+                        logger.info(f"[{analysis_id}] Surface {i+1} converted from WGS84 to UTM: {len(utm_vertices)} vertices")
                         
-                        # First, clip vertices to boundary to reduce count before UTM conversion
-                        print(f"DEBUG: Clipping {len(surface['vertices'])} vertices to boundary")
-                        # FIXED: Pass faces to preserve triangulation during clipping
+                        # Now clip in UTM coordinates
+                        print(f"DEBUG: Clipping {len(utm_vertices)} vertices to UTM boundary")
                         if surface.get('faces') is not None and len(surface['faces']) > 0:
-                            clipped_wgs84_vertices, clipped_wgs84_faces = self.surface_processor.clip_to_boundary(
-                                surface['vertices'], boundary_lon_lat, surface['faces']
+                            clipped_utm_vertices, clipped_utm_faces = self.surface_processor.clip_to_boundary(
+                                utm_vertices, utm_boundary, surface['faces']
                             )
-                            print(f"DEBUG: Clipping with faces - vertices: {len(surface['vertices'])} -> {len(clipped_wgs84_vertices)}")
-                            print(f"DEBUG: Clipping with faces - faces: {len(surface['faces'])} -> {len(clipped_wgs84_faces)}")
+                            print(f"DEBUG: Clipping with faces - vertices: {len(utm_vertices)} -> {len(clipped_utm_vertices)}")
+                            print(f"DEBUG: Clipping with faces - faces: {len(surface['faces'])} -> {len(clipped_utm_faces)}")
                         else:
-                            clipped_wgs84_vertices = self.surface_processor.clip_to_boundary(surface['vertices'], boundary_lon_lat)
-                            clipped_wgs84_faces = None
-                            print(f"DEBUG: Clipping without faces - vertices: {len(surface['vertices'])} -> {len(clipped_wgs84_vertices)}")
+                            clipped_utm_vertices = self.surface_processor.clip_to_boundary(utm_vertices, utm_boundary)
+                            clipped_utm_faces = None
+                            print(f"DEBUG: Clipping without faces - vertices: {len(utm_vertices)} -> {len(clipped_utm_vertices)}")
                         
-                        clipped_vertex_count = len(clipped_wgs84_vertices)
-                        print(f"DEBUG: Vertex clipping result: {len(surface['vertices'])} -> {clipped_vertex_count} vertices")
-                        logger.info(f"[{analysis_id}] Surface {i+1} vertex clipping: {len(surface['vertices'])} -> {clipped_vertex_count} vertices")
+                        clipped_vertex_count = len(clipped_utm_vertices)
+                        print(f"DEBUG: Vertex clipping result: {len(utm_vertices)} -> {clipped_vertex_count} vertices")
+                        logger.info(f"[{analysis_id}] Surface {i+1} vertex clipping: {len(utm_vertices)} -> {clipped_vertex_count} vertices")
                         
-                        # Convert clipped vertices to UTM for downstream processing
+                        # Update surface with UTM coordinates
                         if clipped_vertex_count > 0:
-                            print(f"DEBUG: Converting {clipped_vertex_count} clipped vertices from WGS84 to UTM")
-                            clipped_utm_vertices = self._convert_wgs84_to_utm(clipped_wgs84_vertices)
                             surface['vertices'] = clipped_utm_vertices
                             
-                            # FIXED: Preserve original triangulation indices instead of creating new triangulation
-                            # The original faces from WGS84 triangulation should be preserved
-                            # since they reference the same vertex indices (just with different coordinates)
-                            if clipped_wgs84_faces is not None and len(clipped_wgs84_faces) > 0:
-                                print(f"DEBUG: Preserving clipped triangulation indices: {len(clipped_wgs84_faces)} faces")
-                                logger.info(f"[{analysis_id}] Surface {i+1} preserving clipped triangulation: {len(clipped_wgs84_faces)} faces")
-                                # Use the clipped faces - they reference the same vertex indices
-                                surface['faces'] = clipped_wgs84_faces
+                            # Preserve triangulation indices
+                            if clipped_utm_faces is not None and len(clipped_utm_faces) > 0:
+                                print(f"DEBUG: Preserving clipped triangulation indices: {len(clipped_utm_faces)} faces")
+                                logger.info(f"[{analysis_id}] Surface {i+1} preserving clipped triangulation: {len(clipped_utm_faces)} faces")
+                                surface['faces'] = clipped_utm_faces
                             elif surface.get('faces') is not None and len(surface['faces']) > 0:
                                 print(f"DEBUG: Preserving original triangulation indices: {len(surface['faces'])} faces")
                                 logger.info(f"[{analysis_id}] Surface {i+1} preserving original triangulation: {len(surface['faces'])} faces")
                                 # Faces are already correct - they reference the same vertex indices
-                                # No need to retriangulate since we're just transforming coordinates
                             else:
                                 print(f"DEBUG: No original faces available, creating new triangulation in UTM")
                                 try:
-                                    # Only create new triangulation if no original faces exist
                                     tri = Delaunay(clipped_utm_vertices[:, :2])
                                     surface['faces'] = tri.simplices
                                     print(f"DEBUG: New triangulation completed - {len(surface['faces'])} faces")
@@ -299,8 +333,8 @@ class AnalysisExecutor:
                                     print(f"DEBUG: Triangulation failed: {e}")
                                     logger.warning(f"[{analysis_id}] Surface {i+1} triangulation failed: {e}")
                                     surface['faces'] = None
-                            print(f"DEBUG: Conversion to UTM completed")
-                            logger.info(f"[{analysis_id}] Surface {i+1} converted from WGS84 to UTM after clipping")
+                            print(f"DEBUG: SHP surface clipping in UTM completed")
+                            logger.info(f"[{analysis_id}] Surface {i+1} clipping in UTM completed")
                         else:
                             print(f"DEBUG: No vertices after clipping, setting empty array")
                             surface['vertices'] = np.empty((0, 3), dtype=surface['vertices'].dtype)
@@ -308,54 +342,42 @@ class AnalysisExecutor:
                             logger.warning(f"[{analysis_id}] Surface {i+1} has no vertices after clipping")
                     
                     else:
-                        # PLY files are in UTM coordinates, need to convert to WGS84 for clipping
-                        print(f"DEBUG: Surface {i+1} is PLY file, converting to WGS84 for clipping")
-                        logger.info(f"[{analysis_id}] Surface {i+1} is PLY file, converting to WGS84 for clipping")
+                        # PLY files are already in UTM coordinates, clip directly
+                        print(f"DEBUG: Surface {i+1} is PLY file, clipping directly in UTM")
+                        logger.info(f"[{analysis_id}] Surface {i+1} is PLY file, clipping directly in UTM")
                         
-                        # Convert surface vertices from UTM to WGS84 for clipping
-                        wgs84_vertices = self._convert_utm_to_wgs84(surface['vertices'])
-                        print(f"DEBUG: Converted PLY vertices to WGS84: {len(wgs84_vertices)}")
-                        
-                        # Clip vertices to boundary in WGS84
-                        print(f"DEBUG: Calling clip_to_boundary for PLY surface")
-                        # FIXED: Pass faces to preserve triangulation during clipping
+                        # Clip vertices to boundary in UTM
+                        print(f"DEBUG: Clipping {len(surface['vertices'])} vertices to UTM boundary")
                         if surface.get('faces') is not None and len(surface['faces']) > 0:
-                            clipped_wgs84_vertices, clipped_wgs84_faces = self.surface_processor.clip_to_boundary(
-                                wgs84_vertices, wgs84_boundary, surface['faces']
+                            clipped_utm_vertices, clipped_utm_faces = self.surface_processor.clip_to_boundary(
+                                surface['vertices'], utm_boundary, surface['faces']
                             )
-                            print(f"DEBUG: Clipping with faces - vertices: {len(wgs84_vertices)} -> {len(clipped_wgs84_vertices)}")
-                            print(f"DEBUG: Clipping with faces - faces: {len(surface['faces'])} -> {len(clipped_wgs84_faces)}")
+                            print(f"DEBUG: Clipping with faces - vertices: {len(surface['vertices'])} -> {len(clipped_utm_vertices)}")
+                            print(f"DEBUG: Clipping with faces - faces: {len(surface['faces'])} -> {len(clipped_utm_faces)}")
                         else:
-                            clipped_wgs84_vertices = self.surface_processor.clip_to_boundary(wgs84_vertices, wgs84_boundary)
-                            clipped_wgs84_faces = None
-                            print(f"DEBUG: Clipping without faces - vertices: {len(wgs84_vertices)} -> {len(clipped_wgs84_vertices)}")
+                            clipped_utm_vertices = self.surface_processor.clip_to_boundary(surface['vertices'], utm_boundary)
+                            clipped_utm_faces = None
+                            print(f"DEBUG: Clipping without faces - vertices: {len(surface['vertices'])} -> {len(clipped_utm_vertices)}")
                         
-                        clipped_vertex_count = len(clipped_wgs84_vertices)
+                        clipped_vertex_count = len(clipped_utm_vertices)
                         print(f"DEBUG: clip_to_boundary returned {clipped_vertex_count} vertices")
                         
-                        # Convert clipped vertices back to UTM for downstream processing
+                        # Update surface with clipped vertices
                         if clipped_vertex_count > 0:
-                            print(f"DEBUG: Converting clipped vertices back to UTM")
-                            clipped_utm_vertices = self._convert_wgs84_to_utm(clipped_wgs84_vertices)
                             surface['vertices'] = clipped_utm_vertices
                             
-                            # FIXED: Preserve original triangulation indices instead of creating new triangulation
-                            # The original faces from WGS84 triangulation should be preserved
-                            # since they reference the same vertex indices (just with different coordinates)
-                            if clipped_wgs84_faces is not None and len(clipped_wgs84_faces) > 0:
-                                print(f"DEBUG: Preserving clipped triangulation indices: {len(clipped_wgs84_faces)} faces")
-                                logger.info(f"[{analysis_id}] Surface {i+1} preserving clipped triangulation: {len(clipped_wgs84_faces)} faces")
-                                # Use the clipped faces - they reference the same vertex indices
-                                surface['faces'] = clipped_wgs84_faces
+                            # Preserve triangulation indices
+                            if clipped_utm_faces is not None and len(clipped_utm_faces) > 0:
+                                print(f"DEBUG: Preserving clipped triangulation indices: {len(clipped_utm_faces)} faces")
+                                logger.info(f"[{analysis_id}] Surface {i+1} preserving clipped triangulation: {len(clipped_utm_faces)} faces")
+                                surface['faces'] = clipped_utm_faces
                             elif surface.get('faces') is not None and len(surface['faces']) > 0:
                                 print(f"DEBUG: Preserving original triangulation indices: {len(surface['faces'])} faces")
                                 logger.info(f"[{analysis_id}] Surface {i+1} preserving original triangulation: {len(surface['faces'])} faces")
                                 # Faces are already correct - they reference the same vertex indices
-                                # No need to retriangulate since we're just transforming coordinates
                             else:
                                 print(f"DEBUG: No original faces available, creating new triangulation in UTM")
                                 try:
-                                    # Only create new triangulation if no original faces exist
                                     tri = Delaunay(clipped_utm_vertices[:, :2])
                                     surface['faces'] = tri.simplices
                                     print(f"DEBUG: New triangulation completed - {len(surface['faces'])} faces")
@@ -364,27 +386,19 @@ class AnalysisExecutor:
                                     print(f"DEBUG: Triangulation failed: {e}")
                                     logger.warning(f"[{analysis_id}] Surface {i+1} triangulation failed: {e}")
                                     surface['faces'] = None
-                            print(f"DEBUG: Conversion to UTM completed")
-                            logger.info(f"[{analysis_id}] Surface {i+1} converted from WGS84 to UTM after clipping")
+                            print(f"DEBUG: PLY surface clipping in UTM completed")
+                            logger.info(f"[{analysis_id}] Surface {i+1} clipping in UTM completed")
                         else:
                             print(f"DEBUG: No vertices after clipping, setting empty array")
                             surface['vertices'] = np.empty((0, 3), dtype=surface['vertices'].dtype)
                             surface['faces'] = np.empty((0, 3), dtype=int)
                             logger.warning(f"[{analysis_id}] Surface {i+1} has no vertices after clipping")
                     
-                    # Update faces if they exist (this is a simplified approach - in production you might want to re-triangulate)
-                    faces = surface.get('faces')
-                    if faces is not None and ((hasattr(faces, 'size') and faces.size > 0) or (isinstance(faces, list) and len(faces) > 0)):
-                        print(f"DEBUG: Surface {i+1} has faces that may need re-triangulation after clipping")
-                        # For now, we'll keep the faces but note that they may reference non-existent vertices
-                        # In a production system, you'd want to re-triangulate the clipped surface
-                        logger.warning(f"[{analysis_id}] Surface {i+1} has faces that may need re-triangulation after clipping")
-                    
                     print(f"DEBUG: Surface {i+1} clipping completed: {original_vertex_count} -> {clipped_vertex_count} vertices")
                     logger.info(f"[{analysis_id}] Surface {i+1} clipped: {original_vertex_count} -> {clipped_vertex_count} vertices")
                 
-                print(f"DEBUG: Boundary clipping completed for all surfaces")
-                logger.info(f"[{analysis_id}] Boundary clipping completed for all surfaces")
+                print(f"DEBUG: Boundary clipping completed for all surfaces in UTM")
+                logger.info(f"[{analysis_id}] Boundary clipping completed for all surfaces in UTM")
         else:
             print(f"DEBUG: No boundary provided, skipping boundary clipping")
         
@@ -711,6 +725,86 @@ class AnalysisExecutor:
             estimated_zone = int((utm_x / 667000) + 1)
             return 32700 + estimated_zone  # Southern hemisphere
 
+    def _determine_utm_zone_from_boundary(self, boundary_lon_lat: List[List[float]]) -> int:
+        """
+        Determine UTM zone from boundary coordinates
+        
+        Args:
+            boundary_lon_lat: List of [lon, lat] coordinate pairs
+            
+        Returns:
+            UTM zone EPSG code (e.g., 32618 for UTM Zone 18N)
+        """
+        if not boundary_lon_lat or len(boundary_lon_lat) == 0:
+            # Fallback to hardcoded zone
+            return 32617
+        
+        # Use the center point of the boundary to determine UTM zone
+        lons = [coord[0] for coord in boundary_lon_lat]
+        lats = [coord[1] for coord in boundary_lon_lat]
+        center_lon = sum(lons) / len(lons)
+        center_lat = sum(lats) / len(lats)
+        
+        # Calculate UTM zone from longitude
+        zone_number = int((center_lon + 180) / 6) + 1
+        # Ensure zone number is within valid range (1-60)
+        zone_number = max(1, min(60, zone_number))
+        
+        # Determine hemisphere from latitude
+        hemisphere = "N" if center_lat >= 0 else "S"
+        
+        # Return EPSG code: 326xx for Northern, 327xx for Southern
+        return 32600 + zone_number if hemisphere == "N" else 32700 + zone_number
+
+    def _validate_and_fix_boundary(self, boundary_lon_lat: List[List[float]]) -> List[List[float]]:
+        """
+        Validate and fix boundary polygon
+        
+        Args:
+            boundary_lon_lat: List of [lon, lat] coordinate pairs
+            
+        Returns:
+            Validated and potentially fixed boundary coordinates
+        """
+        if len(boundary_lon_lat) < 3:
+            logger.warning("Boundary has fewer than 3 points, cannot create valid polygon")
+            raise ValueError("Boundary must have at least 3 points")
+        
+        # Ensure boundary is closed (first point = last point)
+        if boundary_lon_lat[0] != boundary_lon_lat[-1]:
+            boundary_lon_lat = boundary_lon_lat + [boundary_lon_lat[0]]
+            logger.info("Closed boundary polygon by adding first point to end")
+        
+        # Validate polygon geometry by creating a test polygon
+        try:
+            from shapely.geometry import Polygon
+            test_polygon = Polygon(boundary_lon_lat)
+            if test_polygon.is_valid and test_polygon.area > 0:
+                logger.info(f"Boundary polygon is valid with area: {test_polygon.area:.6f} square degrees")
+                return boundary_lon_lat
+        except Exception as e:
+            logger.warning(f"Error validating boundary polygon: {e}")
+        
+        # Fallback: create bounding box with buffer
+        logger.warning("Boundary polygon is invalid, creating fallback bounding box")
+        boundary_array = np.array(boundary_lon_lat)
+        min_lon, min_lat = np.min(boundary_array, axis=0)
+        max_lon, max_lat = np.max(boundary_array, axis=0)
+        
+        # Add buffer to ensure we don't lose valid points
+        buffer_size = max((max_lon - min_lon), (max_lat - min_lat)) * 0.1
+        
+        fallback_boundary = [
+            [min_lon - buffer_size, min_lat - buffer_size],
+            [max_lon + buffer_size, min_lat - buffer_size],
+            [max_lon + buffer_size, max_lat + buffer_size],
+            [min_lon - buffer_size, max_lat + buffer_size],
+            [min_lon - buffer_size, min_lat - buffer_size]  # Close polygon
+        ]
+        
+        logger.info(f"Created fallback bounding box boundary with buffer: {fallback_boundary}")
+        return fallback_boundary
+
     def _convert_utm_to_wgs84(self, vertices: np.ndarray) -> np.ndarray:
         """
         Convert UTM vertices back to WGS84 coordinates
@@ -750,12 +844,13 @@ class AnalysisExecutor:
         
         return np.array(wgs84_vertices)
 
-    def _convert_wgs84_to_utm(self, vertices: np.ndarray) -> np.ndarray:
+    def _convert_wgs84_to_utm(self, vertices: np.ndarray, utm_zone: int = None) -> np.ndarray:
         """
         Convert WGS84 vertices to UTM coordinates
         
         Args:
             vertices: Nx3 numpy array of WGS84 coordinates (lat, lon, elevation)
+            utm_zone: UTM zone EPSG code (e.g., 32617 for UTM Zone 17N). If None, will be determined from first vertex.
             
         Returns:
             Nx3 numpy array of UTM coordinates (meters)
@@ -763,12 +858,30 @@ class AnalysisExecutor:
         if vertices is None or vertices.size == 0:
             return vertices
         
-        # Determine UTM zone from the first vertex for efficiency
+        # Validate input coordinates are in WGS84 format
         if len(vertices) > 0:
             first_vertex = vertices[0]
             lat, lon = first_vertex[0], first_vertex[1]
-            # Use a reasonable default UTM zone for the area (Zone 17N for this region)
-            utm_zone = 32617  # UTM Zone 17N
+            
+            # Check if coordinates are already in UTM format (large values)
+            if abs(lat) > 90 or abs(lon) > 180:
+                logger.warning(f"Coordinates appear to already be in UTM format (lat: {lat}, lon: {lon}), skipping conversion")
+                return vertices
+            
+            # Validate WGS84 coordinate ranges
+            if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                logger.error(f"Invalid WGS84 coordinates: lat={lat}, lon={lon}")
+                raise ValueError(f"Invalid WGS84 coordinates: lat={lat}, lon={lon}")
+            
+            # Determine UTM zone if not provided
+            if utm_zone is None:
+                # Use the first vertex to determine UTM zone
+                zone_number = int((lon + 180) / 6) + 1
+                zone_number = max(1, min(60, zone_number))  # Ensure valid range
+                hemisphere = "N" if lat >= 0 else "S"
+                utm_zone = 32600 + zone_number if hemisphere == "N" else 32700 + zone_number
+            
+            logger.info(f"Converting WGS84 to UTM Zone {utm_zone} (lat: {lat:.6f}, lon: {lon:.6f})")
             transformer = Transformer.from_crs("EPSG:4326", f"EPSG:{utm_zone}", always_xy=True)
         else:
             return vertices
@@ -784,6 +897,12 @@ class AnalysisExecutor:
             for vertex in batch:
                 lat, lon = vertex[0], vertex[1]
                 elevation = vertex[2] if len(vertex) > 2 else 0.0
+                
+                # Validate each coordinate in the batch
+                if not (-90 <= lat <= 90) or not (-180 <= lon <= 180):
+                    logger.warning(f"Skipping invalid WGS84 coordinate: lat={lat}, lon={lon}")
+                    batch_utm.append([0.0, 0.0, elevation])
+                    continue
                 
                 try:
                     utm_x, utm_y = transformer.transform(lon, lat)

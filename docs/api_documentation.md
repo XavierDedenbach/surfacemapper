@@ -4,6 +4,17 @@
 
 The Surface Mapper API provides endpoints for surface data processing, volume calculations, and analysis. This document describes all available endpoints, request/response formats, and usage examples.
 
+## Coordinate System Requirements
+
+All API endpoints that process surface data require coordinates to be in UTM (meters). The system will automatically project WGS84 coordinates to UTM for SHP files and boundaries, but PLY files must be in UTM. All outputs are in UTM (meters). Calculations assume UTM coordinates.
+
+- SHP files: Projected from WGS84 to UTM automatically (mesh operations and boundary are projected together; project together)
+- PLY files: Must be in UTM coordinates
+- Boundaries: Projected from WGS84 to UTM automatically
+- All returned coordinates, areas, and volumes are in UTM (meters)
+
+**Note:** All relevant endpoints (upload, process, results, visualization) require and return UTM coordinates. All mesh operations are performed in UTM coordinates only. SHP workflows project mesh and boundary together before mesh operations (project together).
+
 ## Base URL
 
 ```

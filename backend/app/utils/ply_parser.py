@@ -18,13 +18,13 @@ class PLYParser:
     
     def parse_ply_file(self, file_path: str) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
-        Parse a PLY file and return vertices and faces (if available)
+        Parse a PLY file and return vertices and faces (if available) in UTM coordinates.
         
         Args:
-            file_path: Path to the PLY file
+            file_path: Path to the PLY file (assumed to be in UTM coordinates)
             
         Returns:
-            Tuple of (vertices, faces) where faces may be None
+            Tuple of (vertices, faces) where vertices are in UTM meters and faces may be None
         """
         try:
             plydata = PlyData.read(file_path)
@@ -52,6 +52,20 @@ class PLYParser:
             faces = self._extract_faces(plydata)
             logger.info(f"Successfully parsed PLY file: {file_path}")
             logger.info(f"Vertices: {len(vertices)}, Faces: {len(faces) if faces is not None else 0}")
+            
+            # Validate that coordinates are in UTM range (meters, not degrees)
+            if len(vertices) > 0:
+                x_coords = vertices[:, 0]
+                y_coords = vertices[:, 1]
+                
+                # UTM coordinates should be in meters (typically 100,000 to 1,000,000 for X, 4,000,000 to 10,000,000 for Y)
+                is_utm = np.all(x_coords > 10000) and np.all(y_coords > 1000000)
+                if not is_utm:
+                    logger.warning(f"PLY file coordinates may not be in UTM format. X range: {x_coords.min():.2f} to {x_coords.max():.2f}, Y range: {y_coords.min():.2f} to {y_coords.max():.2f}")
+                    logger.info("Assuming coordinates are in UTM meters for processing")
+                else:
+                    logger.info(f"PLY file coordinates confirmed in UTM format. X range: {x_coords.min():.2f} to {x_coords.max():.2f}m, Y range: {y_coords.min():.2f} to {y_coords.max():.2f}m")
+            
             # Output format checks
             if not isinstance(vertices, np.ndarray) or vertices.ndim != 2 or vertices.shape[1] != 3:
                 raise ValueError(f"Parsed vertices array has invalid format: {type(vertices)}, shape {getattr(vertices, 'shape', None)}")
