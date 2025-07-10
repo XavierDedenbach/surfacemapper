@@ -477,7 +477,7 @@ class SHPParser:
         # Convert numpy array to list of tuples for projection
         wgs84_coords = [(row[0], row[1], row[2]) for row in wgs84_vertices]
         return self._project_to_utm(wgs84_coords)
-
+    
     def _project_to_utm(self, wgs84_coords: List[Tuple[float, float, float]]) -> np.ndarray:
         """
         Project WGS84 coordinates to UTM coordinates.

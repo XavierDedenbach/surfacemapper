@@ -112,6 +112,12 @@ function App() {
             
             console.log(`Is Volume Analysis? ${isVolumeAnalysis}`);
             console.log(`Are Results Ready? ${resultsAreReady}`);
+            
+            // Debug volume results specifically
+            console.log("Volume results:", result.volume_results);
+            console.log("Thickness results:", result.thickness_results);
+            console.log("Analysis summary:", result.analysis_summary);
+            console.log("All result keys:", Object.keys(result));
 
             if (resultsAreReady) {
               console.log("Results are ready. Setting state and displaying results page.");
@@ -199,16 +205,35 @@ function App() {
     setHoverInfo(null);
     try {
       const response = await backendApi.pointQuery(analysisId, { x, y, coordinate_system: 'utm' });
-      // Use the first layer for display
-      const layer = response?.thickness_layers?.[0];
+      
+      // Show all layer thicknesses, not just the first one
+      const thicknessLayers = response?.thickness_layers || [];
+      let totalThickness = 0;
+      let layerCount = 0;
+      
+      // Calculate total thickness from all layers
+      thicknessLayers.forEach(layer => {
+        if (layer.thickness_feet !== null && layer.thickness_feet !== undefined) {
+          totalThickness += layer.thickness_feet;
+          layerCount++;
+        }
+      });
+      
+      // Use average thickness if multiple layers, or single layer thickness
+      const averageThickness = layerCount > 0 ? totalThickness / layerCount : 
+                              (thicknessLayers[0]?.thickness_feet || null);
+      
       setHoverInfo({
         x: response?.query_point?.x,
         y: response?.query_point?.y,
-        thickness: layer?.thickness_feet,
+        thickness: averageThickness,
         lat: response?.query_point?.lat,
         lon: response?.query_point?.lon,
+        layerCount: layerCount,
+        totalThickness: totalThickness
       });
     } catch (error) {
+      console.error('Point query error:', error);
       setHoverInfo(null);
     } finally {
       setPointQueryLoading(false);

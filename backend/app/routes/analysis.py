@@ -217,6 +217,8 @@ async def point_query(
 
     # For each layer, calculate thickness at this point
     thickness_layers = []
+    logger.info(f"Point query at ({point[0]:.2f}, {point[1]:.2f}) - calculating thickness for {len(surface_tins)-1} layers")
+    
     for i in range(len(surface_tins) - 1):
         upper_tin = surface_tins[i+1]
         lower_tin = surface_tins[i]
@@ -225,12 +227,23 @@ async def point_query(
         lower_z = thickness_calculator._interpolate_z_at_point(point, lower_tin)
         if np.isnan(upper_z) or np.isnan(lower_z):
             thickness = None
+            logger.info(f"  Layer {i}: Invalid thickness (upper_z={upper_z}, lower_z={lower_z})")
         else:
             thickness = upper_z - lower_z
+            logger.info(f"  Layer {i}: thickness={thickness:.3f} feet (upper_z={upper_z:.3f}, lower_z={lower_z:.3f})")
+        
         thickness_layers.append({
             "layer_designation": f"{surface_names[i]} to {surface_names[i+1]}",
             "thickness_feet": thickness
         })
+
+    logger.info(f"Point query complete: {len(thickness_layers)} layers processed")
+    for i, layer in enumerate(thickness_layers):
+        thickness = layer['thickness_feet']
+        if thickness is not None:
+            logger.info(f"  Layer {i}: {layer['layer_designation']} = {thickness:.3f} ft")
+        else:
+            logger.info(f"  Layer {i}: {layer['layer_designation']} = None (no thickness data)")
 
     return {
         "thickness_layers": thickness_layers,

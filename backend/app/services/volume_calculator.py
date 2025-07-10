@@ -44,12 +44,21 @@ class VolumeCalculator:
             if surface1 is None or surface2 is None:
                 raise ValueError("Surface data is missing 'vertices'.")
 
+            logger.info(f"Volume calculation: surface1={len(surface1)} vertices, surface2={len(surface2)} vertices")
+            
+            # Log coordinate ranges to help debug coordinate system issues
+            if len(surface1) > 0 and len(surface2) > 0:
+                logger.info(f"Surface1 coordinate ranges: X[{np.min(surface1[:, 0]):.2f}, {np.max(surface1[:, 0]):.2f}], Y[{np.min(surface1[:, 1]):.2f}, {np.max(surface1[:, 1]):.2f}], Z[{np.min(surface1[:, 2]):.2f}, {np.max(surface1[:, 2]):.2f}]")
+                logger.info(f"Surface2 coordinate ranges: X[{np.min(surface2[:, 0]):.2f}, {np.max(surface2[:, 0]):.2f}], Y[{np.min(surface2[:, 1]):.2f}, {np.max(surface2[:, 1]):.2f}], Z[{np.min(surface2[:, 2]):.2f}, {np.max(surface2[:, 2]):.2f}]")
+
             # Defer to the more robust calculation method
             volume_diff_cubic_meters = calculate_volume_between_surfaces(
                 surface1,
                 surface2,
                 method="pyvista"
             )
+            
+            logger.info(f"Volume calculation result: {volume_diff_cubic_meters:.2f} cubic meters")
             
             # Convert from cubic meters to cubic yards
             # 1 cubic meter = 1.30795 cubic yards
@@ -61,6 +70,8 @@ class VolumeCalculator:
                 volume_diff_cubic_yards - uncertainty,
                 volume_diff_cubic_yards + uncertainty
             )
+            
+            logger.info(f"Final volume result: {volume_diff_cubic_yards:.2f} cubic yards (±{uncertainty:.2f})")
             
             return VolumeResult(
                 volume_cubic_yards=volume_diff_cubic_yards,
@@ -221,8 +232,12 @@ def _calculate_volume_with_interpolation(bottom_surface: np.ndarray, top_surface
             reference_is_bottom = False
         
         # Create triangulation from reference surface
-        cloud = pv.PolyData(reference_surface.astype(np.float32))
-        mesh = cloud.delaunay_2d()
+        try:
+            cloud = pv.PolyData(reference_surface.astype(np.float32))
+            mesh = cloud.delaunay_2d()
+        except Exception as e:
+            logger.warning(f"PyVista triangulation failed: {e}, falling back to prism method")
+            return _calculate_volume_prism_method(bottom_surface, top_surface)
         
         if mesh.n_cells == 0:
             logger.warning("Triangulation failed, falling back to prism method")
@@ -572,22 +587,55 @@ def _calculate_volume_prism_method(bottom_surface: np.ndarray, top_surface: np.n
     
     Args:
         bottom_surface: 3D points representing bottom surface [N, 3]
-        top_surface: 3D points representing top surface [N, 3]
+        top_surface: 3D points representing top surface [M, 3]
         
     Returns:
         Volume in cubic units
     """
-    # Calculate vertical distances (thickness) at each point
-    thicknesses = np.abs(top_surface[:, 2] - bottom_surface[:, 2])
+    # Handle different vertex counts by using interpolation
+    if len(bottom_surface) != len(top_surface):
+        logger.info(f"Surfaces have different vertex counts ({len(bottom_surface)} vs {len(top_surface)}), using interpolation")
+        
+        # Use the surface with more points as reference
+        if len(bottom_surface) > len(top_surface):
+            reference_surface = bottom_surface
+            other_surface = top_surface
+            reference_is_bottom = True
+        else:
+            reference_surface = top_surface
+            other_surface = bottom_surface
+            reference_is_bottom = False
+        
+        # For each point in reference surface, find closest point in other surface
+        thicknesses = []
+        for ref_point in reference_surface:
+            distances = np.sqrt(
+                (other_surface[:, 0] - ref_point[0])**2 + 
+                (other_surface[:, 1] - ref_point[1])**2
+            )
+            closest_idx = np.argmin(distances)
+            closest_point = other_surface[closest_idx]
+            
+            if reference_is_bottom:
+                thickness = abs(closest_point[2] - ref_point[2])
+            else:
+                thickness = abs(ref_point[2] - closest_point[2])
+            thicknesses.append(thickness)
+        
+        thicknesses = np.array(thicknesses)
+        working_surface = reference_surface
+    else:
+        # Same vertex count, direct calculation
+        thicknesses = np.abs(top_surface[:, 2] - bottom_surface[:, 2])
+        working_surface = bottom_surface
     
-    # For regular grids, calculate area per point and multiply by thickness
-    # This is an approximation that works well for dense, regular grids
-    if len(bottom_surface) > 1:
+    # Calculate area per point and volume
+    if len(working_surface) > 1:
         # Estimate area per point based on bounding box
-        x_range = np.max(bottom_surface[:, 0]) - np.min(bottom_surface[:, 0])
-        y_range = np.max(bottom_surface[:, 1]) - np.min(bottom_surface[:, 1])
+        x_range = np.max(working_surface[:, 0]) - np.min(working_surface[:, 0])
+        y_range = np.max(working_surface[:, 1]) - np.min(working_surface[:, 1])
         total_area = x_range * y_range
-        area_per_point = total_area / len(bottom_surface)
+        area_per_point = total_area / len(working_surface)
         
         # Calculate volume as sum of prism volumes
         volume = np.sum(thicknesses * area_per_point)

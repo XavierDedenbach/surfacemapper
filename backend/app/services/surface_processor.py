@@ -420,33 +420,74 @@ class SurfaceProcessor:
 
     def clip_to_boundary(self, vertices: np.ndarray, boundary: list, faces: np.ndarray = None) -> tuple:
         """
-        Clip surface vertices (and faces if provided) to the defined analysis boundary in UTM coordinates.
-        If faces are provided, returns (vertices, faces). Otherwise, returns vertices only.
-        All operations are performed in UTM coordinates (meters).
+        Clip surface vertices to boundary polygon.
+        
+        Args:
+            vertices: Nx3 numpy array of vertices
+            boundary: List of (x, y) boundary coordinates
+            faces: Optional Mx3 numpy array of face indices
+            
+        Returns:
+            Tuple of (clipped_vertices, clipped_faces) or just clipped_vertices if no faces
         """
-        if vertices is None or vertices.size == 0 or vertices.shape[1] != 3:
-            raise ValueError("Vertices must be a non-empty Nx3 numpy array")
-        if faces is not None and len(faces) > 0:
-            return self.clip_mesh_to_boundary(vertices, faces, boundary)
-        if len(boundary) == 2:
-            min_x, min_y = boundary[0]
-            max_x, max_y = boundary[1]
-            mask = (
-                (vertices[:, 0] >= min_x) & (vertices[:, 0] <= max_x) &
-                (vertices[:, 1] >= min_y) & (vertices[:, 1] <= max_y)
-            )
-            if mask is not None and mask.size > 0:
-                return vertices[mask]
+        logger.info(f"clip_to_boundary called with {len(vertices)} vertices and boundary: {boundary}")
+        
+        if len(vertices) == 0:
+            logger.warning("clip_to_boundary: No vertices to clip")
+            return (np.empty((0, 3)), np.empty((0, 3))) if faces is not None else np.empty((0, 3))
+        
+        if len(boundary) < 3:
+            logger.warning(f"clip_to_boundary: Boundary has only {len(boundary)} points, need at least 3")
+            return (vertices, faces) if faces is not None else vertices
+        
+        try:
+            # Create boundary polygon
+            boundary_polygon = Polygon(boundary)
+            logger.info(f"clip_to_boundary: Created boundary polygon with area: {boundary_polygon.area:.6f}")
+            
+            # Check which vertices are inside the boundary
+            vertices_inside = []
+            vertex_indices_inside = []
+            
+            for i, vertex in enumerate(vertices):
+                point = Point(vertex[0], vertex[1])
+                if boundary_polygon.contains(point):
+                    vertices_inside.append(vertex)
+                    vertex_indices_inside.append(i)
+            
+            logger.info(f"clip_to_boundary: {len(vertices_inside)} out of {len(vertices)} vertices inside boundary")
+            
+            if len(vertices_inside) == 0:
+                logger.warning("clip_to_boundary: No vertices inside boundary - all vertices clipped out")
+                return (np.empty((0, 3)), np.empty((0, 3))) if faces is not None else np.empty((0, 3))
+            
+            clipped_vertices = np.array(vertices_inside)
+            
+            # If faces are provided, update face indices
+            if faces is not None and len(faces) > 0:
+                logger.info(f"clip_to_boundary: Processing {len(faces)} faces")
+                
+                # Create mapping from old vertex indices to new indices
+                vertex_mapping = {old_idx: new_idx for new_idx, old_idx in enumerate(vertex_indices_inside)}
+                
+                clipped_faces = []
+                for face in faces:
+                    # Check if all vertices in this face are inside the boundary
+                    if all(v in vertex_mapping for v in face):
+                        # Map to new vertex indices
+                        new_face = [vertex_mapping[v] for v in face]
+                        clipped_faces.append(new_face)
+                
+                logger.info(f"clip_to_boundary: {len(clipped_faces)} out of {len(faces)} faces preserved")
+                return clipped_vertices, np.array(clipped_faces)
             else:
-                return np.empty((0, 3), dtype=vertices.dtype)
-        elif len(boundary) == 4:
-            filtered = self._clip_to_polygon_boundary(vertices, boundary)
-            if filtered is not None and filtered.size > 0:
-                return filtered
-            else:
-                return np.empty((0, 3), dtype=vertices.dtype)
-        else:
-            raise ValueError("Boundary must be a list of 2 or 4 coordinate tuples")
+                logger.info("clip_to_boundary: No faces provided, returning vertices only")
+                return clipped_vertices
+                
+        except Exception as e:
+            logger.error(f"clip_to_boundary failed: {e}")
+            # Return original vertices if clipping fails
+            return (vertices, faces) if faces is not None else vertices
     
     def _clip_to_polygon_boundary(self, vertices: np.ndarray, boundary: List[Tuple[float, float]]) -> np.ndarray:
         """
@@ -668,10 +709,16 @@ class SurfaceProcessor:
         tonnage_per_layer = params.get('tonnage_per_layer', [])
         tonnage_dict = {item['layer_index']: item['tonnage'] for item in tonnage_per_layer}
         
+        logger.info(f"Processing {len(processed_surfaces)} surfaces for volume/thickness calculation")
+        
         for i in range(len(processed_surfaces) - 1):
             lower_surface = processed_surfaces[i]
             upper_surface = processed_surfaces[i+1]
             layer_name = f"{lower_surface.get('name', 'Layer ' + str(i))} to {upper_surface.get('name', 'Layer ' + str(i+1))}"
+            
+            logger.info(f"Processing layer {i}: {layer_name}")
+            logger.info(f"  Lower surface: {len(lower_surface['vertices'])} vertices")
+            logger.info(f"  Upper surface: {len(upper_surface['vertices'])} vertices")
 
             # Calculate thickness
             thickness_data, invalid_points = thickness_calculator.calculate_thickness_between_surfaces(
@@ -683,18 +730,29 @@ class SurfaceProcessor:
                 invalid_points=invalid_points
             )
             
+            logger.info(f"  Thickness calculation complete: {len(thickness_data)} points, {len(invalid_points)} invalid")
+            logger.info(f"  Thickness stats: avg={thickness_stats.get('mean', 'N/A')}, min={thickness_stats.get('min', 'N/A')}, max={thickness_stats.get('max', 'N/A')}")
+            
             # Calculate volume
+            logger.info(f"  Starting volume calculation...")
             volume_result = volume_calculator.calculate_volume_difference(
                 lower_surface,
                 upper_surface
             )
+            logger.info(f"  Volume calculation complete: {volume_result.volume_cubic_yards:.2f} cubic yards")
 
             # Calculate compaction rate if tonnage is available
             compaction_rate = None
             tonnage_used = tonnage_dict.get(i)
+            logger.info(f"  Layer {i} tonnage lookup: {tonnage_used} (from tonnage_dict: {tonnage_dict})")
             if tonnage_used and volume_result.volume_cubic_yards > 0:
                 # Assuming tonnage is in US tons, material density in lbs/cubic yard
                 compaction_rate = (tonnage_used * 2000) / volume_result.volume_cubic_yards
+                logger.info(f"  Compaction rate: {compaction_rate:.2f} lbs/cubic yard")
+            elif tonnage_used is None:
+                logger.warning(f"  Layer {i} has no tonnage data")
+            elif volume_result.volume_cubic_yards <= 0:
+                logger.warning(f"  Layer {i} has zero volume, cannot calculate compaction rate")
 
             # Store results in the expected format
             volume_results.append({
@@ -704,7 +762,7 @@ class SurfaceProcessor:
             
             thickness_results.append({
                 "layer_designation": layer_name,
-                "average_thickness_feet": thickness_stats.get('average') if thickness_stats.get('average') is not None else 0,
+                "average_thickness_feet": thickness_stats.get('mean') if thickness_stats.get('mean') is not None else 0,
                 "min_thickness_feet": thickness_stats.get('min', 0),
                 "max_thickness_feet": thickness_stats.get('max', 0),
                 "std_dev_thickness_feet": thickness_stats.get('std', 0),
@@ -719,10 +777,12 @@ class SurfaceProcessor:
             analysis_layers.append({
                 "layer_designation": layer_name,
                 "volume_cubic_yards": volume_result.volume_cubic_yards,
-                "avg_thickness_feet": thickness_stats.get('average'),
+                "avg_thickness_feet": thickness_stats.get('mean'),
                 "min_thickness_feet": thickness_stats.get('min'),
                 "max_thickness_feet": thickness_stats.get('max'),
             })
+            
+            logger.info(f"  Layer {i} complete: volume={volume_result.volume_cubic_yards:.2f} cu yd, avg_thickness={thickness_stats.get('mean', 'N/A')} ft")
 
         # --- DETAILED LOGGING OF RESULTS ---
         logger.info("--- Analysis Results Summary ---")
@@ -747,6 +807,19 @@ class SurfaceProcessor:
                 'max_thickness_feet': layer.get('max_thickness_feet')
             })
         logger.info("---------------------------------")
+        
+        # Log final result structure
+        logger.info("Final result structure:")
+        logger.info(f"  - volume_results: {len(volume_results)} entries")
+        logger.info(f"  - thickness_results: {len(thickness_results)} entries")
+        logger.info(f"  - compaction_results: {len(compaction_results)} entries")
+        logger.info(f"  - analysis_summary: {len(analysis_summary)} entries")
+        
+        for i, vol in enumerate(volume_results):
+            logger.info(f"    Volume result {i}: {vol['layer_designation']} = {vol['volume_cubic_yards']:.2f} cu yd")
+        
+        for i, thick in enumerate(thickness_results):
+            logger.info(f"    Thickness result {i}: {thick['layer_designation']} = {thick['average_thickness_feet']:.3f} ft avg")
 
         # Extract georeference parameters from the first entry in georeference_params if available
         georef_params_list = params.get('georeference_params', [])

@@ -217,37 +217,52 @@ def _interpolate_z_at_point(point_2d: np.ndarray, surface_tin: Delaunay) -> floa
     
     Args:
         point_2d: 2D point [x, y]
-        surface_tin: Delaunay triangulation with z_values
+        surface_tin: Delaunay triangulation
         
     Returns:
-        Interpolated Z value or NaN if outside boundary
+        Interpolated Z value or 0.0 if outside boundary
     """
     try:
         # Check if point is within triangulation
         if not _is_point_in_triangulation(point_2d, surface_tin):
-            return np.nan
+            logger.debug(f"Point {point_2d} outside triangulation boundary")
+            return 0.0
         
         # Find containing triangle
         triangle_index = surface_tin.find_simplex(point_2d)
         
         if triangle_index == -1:
-            return np.nan
+            logger.debug(f"Point {point_2d} not found in any triangle")
+            return 0.0
         
-        # Get triangle data
-        triangle_vertices = surface_tin.points[surface_tin.simplices[triangle_index]]
-        triangle_z_values = surface_tin.z_values[surface_tin.simplices[triangle_index]]
+        # Get triangle vertices (including Z values)
+        triangle_vertices_3d = surface_tin.points[surface_tin.simplices[triangle_index]]
+        
+        # Extract 2D coordinates and Z values
+        triangle_vertices_2d = triangle_vertices_3d[:, :2]
+        triangle_z_values = triangle_vertices_3d[:, 2]
         
         # Calculate barycentric coordinates
-        barycentric_coords = _calculate_barycentric_coordinates(point_2d, triangle_vertices)
+        barycentric_coords = _calculate_barycentric_coordinates(point_2d, triangle_vertices_2d)
+        
+        # Validate barycentric coordinates
+        if np.any(barycentric_coords < -0.001) or np.sum(barycentric_coords) > 1.001:
+            logger.debug(f"Invalid barycentric coordinates: {barycentric_coords}")
+            return 0.0
         
         # Interpolate Z value
         interpolated_z = np.sum(barycentric_coords * triangle_z_values)
         
-        return interpolated_z
+        # Validate result
+        if np.isnan(interpolated_z) or np.isinf(interpolated_z):
+            logger.debug(f"Invalid interpolated Z value: {interpolated_z}")
+            return 0.0
+        
+        return float(interpolated_z)
         
     except Exception as e:
-        logger.error(f"Error interpolating Z value: {e}")
-        return np.nan
+        logger.error(f"Error interpolating Z value at {point_2d}: {e}")
+        return 0.0
 
 
 def generate_uniform_sample_points(boundary: np.ndarray, sample_spacing: float) -> np.ndarray:

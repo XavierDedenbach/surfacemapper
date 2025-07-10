@@ -294,16 +294,20 @@ class AnalysisExecutor:
                         
                         # Now clip in UTM coordinates
                         print(f"DEBUG: Clipping {len(utm_vertices)} vertices to UTM boundary")
+                        logger.info(f"[{analysis_id}] Clipping {len(utm_vertices)} vertices to UTM boundary: {utm_boundary}")
+                        
                         if surface.get('faces') is not None and len(surface['faces']) > 0:
                             clipped_utm_vertices, clipped_utm_faces = self.surface_processor.clip_to_boundary(
                                 utm_vertices, utm_boundary, surface['faces']
                             )
                             print(f"DEBUG: Clipping with faces - vertices: {len(utm_vertices)} -> {len(clipped_utm_vertices)}")
                             print(f"DEBUG: Clipping with faces - faces: {len(surface['faces'])} -> {len(clipped_utm_faces)}")
+                            logger.info(f"[{analysis_id}] Surface {i+1} clipping with faces: {len(utm_vertices)} -> {len(clipped_utm_vertices)} vertices")
                         else:
                             clipped_utm_vertices = self.surface_processor.clip_to_boundary(utm_vertices, utm_boundary)
                             clipped_utm_faces = None
                             print(f"DEBUG: Clipping without faces - vertices: {len(utm_vertices)} -> {len(clipped_utm_vertices)}")
+                            logger.info(f"[{analysis_id}] Surface {i+1} clipping without faces: {len(utm_vertices)} -> {len(clipped_utm_vertices)} vertices")
                         
                         clipped_vertex_count = len(clipped_utm_vertices)
                         print(f"DEBUG: Vertex clipping result: {len(utm_vertices)} -> {clipped_vertex_count} vertices")
@@ -337,27 +341,43 @@ class AnalysisExecutor:
                             logger.info(f"[{analysis_id}] Surface {i+1} clipping in UTM completed")
                         else:
                             print(f"DEBUG: No vertices after clipping, setting empty array")
+                            logger.warning(f"[{analysis_id}] Surface {i+1} has no vertices after clipping - boundary may be too small")
                             surface['vertices'] = np.empty((0, 3), dtype=surface['vertices'].dtype)
                             surface['faces'] = np.empty((0, 3), dtype=int)
-                            logger.warning(f"[{analysis_id}] Surface {i+1} has no vertices after clipping")
                     
                     else:
                         # PLY files are already in UTM coordinates, clip directly
                         print(f"DEBUG: Surface {i+1} is PLY file, clipping directly in UTM")
                         logger.info(f"[{analysis_id}] Surface {i+1} is PLY file, clipping directly in UTM")
                         
+                        # Log vertex coordinate ranges before clipping
+                        if len(surface['vertices']) > 0:
+                            x_range = np.max(surface['vertices'][:, 0]) - np.min(surface['vertices'][:, 0])
+                            y_range = np.max(surface['vertices'][:, 1]) - np.min(surface['vertices'][:, 1])
+                            z_range = np.max(surface['vertices'][:, 2]) - np.min(surface['vertices'][:, 2])
+                            print(f"DEBUG: Surface {i+1} coordinate ranges - X: {x_range:.2f}, Y: {y_range:.2f}, Z: {z_range:.2f}")
+                            logger.info(f"[{analysis_id}] Surface {i+1} coordinate ranges - X: {x_range:.2f}, Y: {y_range:.2f}, Z: {z_range:.2f}")
+                        
+                        # Log boundary coordinates
+                        print(f"DEBUG: UTM boundary coordinates: {utm_boundary}")
+                        logger.info(f"[{analysis_id}] UTM boundary coordinates: {utm_boundary}")
+                        
                         # Clip vertices to boundary in UTM
                         print(f"DEBUG: Clipping {len(surface['vertices'])} vertices to UTM boundary")
+                        logger.info(f"[{analysis_id}] Clipping {len(surface['vertices'])} vertices to UTM boundary")
+                        
                         if surface.get('faces') is not None and len(surface['faces']) > 0:
                             clipped_utm_vertices, clipped_utm_faces = self.surface_processor.clip_to_boundary(
                                 surface['vertices'], utm_boundary, surface['faces']
                             )
                             print(f"DEBUG: Clipping with faces - vertices: {len(surface['vertices'])} -> {len(clipped_utm_vertices)}")
                             print(f"DEBUG: Clipping with faces - faces: {len(surface['faces'])} -> {len(clipped_utm_faces)}")
+                            logger.info(f"[{analysis_id}] Surface {i+1} clipping with faces: {len(surface['vertices'])} -> {len(clipped_utm_vertices)} vertices")
                         else:
                             clipped_utm_vertices = self.surface_processor.clip_to_boundary(surface['vertices'], utm_boundary)
                             clipped_utm_faces = None
                             print(f"DEBUG: Clipping without faces - vertices: {len(surface['vertices'])} -> {len(clipped_utm_vertices)}")
+                            logger.info(f"[{analysis_id}] Surface {i+1} clipping without faces: {len(surface['vertices'])} -> {len(clipped_utm_vertices)} vertices")
                         
                         clipped_vertex_count = len(clipped_utm_vertices)
                         print(f"DEBUG: clip_to_boundary returned {clipped_vertex_count} vertices")
@@ -390,9 +410,9 @@ class AnalysisExecutor:
                             logger.info(f"[{analysis_id}] Surface {i+1} clipping in UTM completed")
                         else:
                             print(f"DEBUG: No vertices after clipping, setting empty array")
+                            logger.warning(f"[{analysis_id}] Surface {i+1} has no vertices after clipping - boundary may be too small or surface outside boundary")
                             surface['vertices'] = np.empty((0, 3), dtype=surface['vertices'].dtype)
                             surface['faces'] = np.empty((0, 3), dtype=int)
-                            logger.warning(f"[{analysis_id}] Surface {i+1} has no vertices after clipping")
                     
                     print(f"DEBUG: Surface {i+1} clipping completed: {original_vertex_count} -> {clipped_vertex_count} vertices")
                     logger.info(f"[{analysis_id}] Surface {i+1} clipped: {original_vertex_count} -> {clipped_vertex_count} vertices")
@@ -434,23 +454,23 @@ class AnalysisExecutor:
                 logger.info(f"[{analysis_id}] Using UTM extent for baseline: X({min_x:.2f} to {max_x:.2f}), Y({min_y:.2f} to {max_y:.2f})")
             else:
                 print(f"DEBUG: First surface is in WGS84 coordinates, generating baseline in WGS84")
-                # Use boundary coordinates for baseline generation if available
-                if analysis_boundary and 'wgs84_coordinates' in analysis_boundary:
-                    # Convert boundary from [lat, lon] to [lon, lat] format
-                    boundary_lon_lat = [[coord[1], coord[0]] for coord in analysis_boundary['wgs84_coordinates']]
-                    boundary_array = np.array(boundary_lon_lat)
-                    
-                    # Use boundary extent for baseline generation
-                    min_x, max_x = np.min(boundary_array[:, 0]), np.max(boundary_array[:, 0])  # longitude
-                    min_y, max_y = np.min(boundary_array[:, 1]), np.max(boundary_array[:, 1])  # latitude
-                    print(f"DEBUG: Using boundary extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-                    logger.info(f"[{analysis_id}] Using boundary extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-                else:
-                    # Fallback to clipped surface extent
-                    min_x, max_x = np.min(vertices[:, 0]), np.max(vertices[:, 0])
-                    min_y, max_y = np.min(vertices[:, 1]), np.max(vertices[:, 1])
-                    print(f"DEBUG: Using clipped surface extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-                    logger.info(f"[{analysis_id}] Using clipped surface extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
+            # Use boundary coordinates for baseline generation if available
+            if analysis_boundary and 'wgs84_coordinates' in analysis_boundary:
+                # Convert boundary from [lat, lon] to [lon, lat] format
+                boundary_lon_lat = [[coord[1], coord[0]] for coord in analysis_boundary['wgs84_coordinates']]
+                boundary_array = np.array(boundary_lon_lat)
+                
+                # Use boundary extent for baseline generation
+                min_x, max_x = np.min(boundary_array[:, 0]), np.max(boundary_array[:, 0])  # longitude
+                min_y, max_y = np.min(boundary_array[:, 1]), np.max(boundary_array[:, 1])  # latitude
+                print(f"DEBUG: Using boundary extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
+                logger.info(f"[{analysis_id}] Using boundary extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
+            else:
+                # Fallback to clipped surface extent
+                min_x, max_x = np.min(vertices[:, 0]), np.max(vertices[:, 0])
+                min_y, max_y = np.min(vertices[:, 1]), np.max(vertices[:, 1])
+                print(f"DEBUG: Using clipped surface extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
+                logger.info(f"[{analysis_id}] Using clipped surface extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
             
             min_z = np.min(vertices[:, 2])
             print(f"DEBUG: Minimum Z value: {min_z}")
@@ -495,8 +515,15 @@ class AnalysisExecutor:
             print(f"DEBUG: Baseline surface added to processing list")
             logger.info(f"[{analysis_id}] Baseline surface generated with {len(baseline_vertices)} vertices")
         
+        # Extract tonnage data from params
+        tonnage_per_layer = params.get('tonnage_per_layer', [])
+        print(f"DEBUG: Tonnage per layer: {tonnage_per_layer}")
+        logger.info(f"[{analysis_id}] Tonnage data: {tonnage_per_layer}")
+        
         processing_params = params.get('params', {})
-        print(f"DEBUG: Processing parameters: {processing_params}")
+        # Add tonnage data to processing params
+        processing_params['tonnage_per_layer'] = tonnage_per_layer
+        print(f"DEBUG: Processing parameters with tonnage: {processing_params}")
         
         print(f"DEBUG: Starting surface processing with {len(surfaces_to_process)} surfaces")
         logger.info(f"[{analysis_id}] Starting surface processing with {len(surfaces_to_process)} surfaces")
