@@ -220,27 +220,26 @@ def _interpolate_z_at_point(point_2d: np.ndarray, surface_tin: Delaunay) -> floa
         surface_tin: Delaunay triangulation
         
     Returns:
-        Interpolated Z value or 0.0 if outside boundary
+        Interpolated Z value or np.nan if outside boundary
     """
     try:
         # Check if point is within triangulation
         if not _is_point_in_triangulation(point_2d, surface_tin):
             logger.debug(f"Point {point_2d} outside triangulation boundary")
-            return 0.0
+            return np.nan
         
         # Find containing triangle
         triangle_index = surface_tin.find_simplex(point_2d)
         
         if triangle_index == -1:
             logger.debug(f"Point {point_2d} not found in any triangle")
-            return 0.0
+            return np.nan
         
-        # Get triangle vertices (including Z values)
-        triangle_vertices_3d = surface_tin.points[surface_tin.simplices[triangle_index]]
+        # Get triangle vertices (2D coordinates only)
+        triangle_vertices_2d = surface_tin.points[surface_tin.simplices[triangle_index]]
         
-        # Extract 2D coordinates and Z values
-        triangle_vertices_2d = triangle_vertices_3d[:, :2]
-        triangle_z_values = triangle_vertices_3d[:, 2]
+        # Get Z values from the z_values attribute
+        triangle_z_values = surface_tin.z_values[surface_tin.simplices[triangle_index]]
         
         # Calculate barycentric coordinates
         barycentric_coords = _calculate_barycentric_coordinates(point_2d, triangle_vertices_2d)
@@ -248,7 +247,7 @@ def _interpolate_z_at_point(point_2d: np.ndarray, surface_tin: Delaunay) -> floa
         # Validate barycentric coordinates
         if np.any(barycentric_coords < -0.001) or np.sum(barycentric_coords) > 1.001:
             logger.debug(f"Invalid barycentric coordinates: {barycentric_coords}")
-            return 0.0
+            return np.nan
         
         # Interpolate Z value
         interpolated_z = np.sum(barycentric_coords * triangle_z_values)
@@ -256,12 +255,52 @@ def _interpolate_z_at_point(point_2d: np.ndarray, surface_tin: Delaunay) -> floa
         # Validate result
         if np.isnan(interpolated_z) or np.isinf(interpolated_z):
             logger.debug(f"Invalid interpolated Z value: {interpolated_z}")
-            return 0.0
+            return np.nan
         
         return float(interpolated_z)
         
     except Exception as e:
         logger.error(f"Error interpolating Z value at {point_2d}: {e}")
+        return np.nan
+
+
+def _interpolate_nearest_thickness(point_2d: np.ndarray, upper_tin: Delaunay, lower_tin: Delaunay) -> float:
+    """
+    Interpolate thickness using nearest neighbor when direct interpolation fails.
+    
+    Args:
+        point_2d: 2D point [x, y]
+        upper_tin: Upper surface triangulation
+        lower_tin: Lower surface triangulation
+        
+    Returns:
+        Interpolated thickness value or 0.0 if no valid data
+    """
+    try:
+        # Find nearest points in both surfaces
+        upper_distances = np.linalg.norm(upper_tin.points - point_2d, axis=1)
+        lower_distances = np.linalg.norm(lower_tin.points - point_2d, axis=1)
+        
+        # Get nearest points
+        upper_nearest_idx = np.argmin(upper_distances)
+        lower_nearest_idx = np.argmin(lower_distances)
+        
+        # Get Z values at nearest points
+        upper_z = upper_tin.z_values[upper_nearest_idx]
+        lower_z = lower_tin.z_values[lower_nearest_idx]
+        
+        # Calculate thickness
+        thickness = upper_z - lower_z
+        
+        # Validate result
+        if np.isnan(thickness) or np.isinf(thickness):
+            logger.debug(f"Invalid nearest neighbor thickness: {thickness}")
+            return 0.0
+        
+        return float(thickness)
+        
+    except Exception as e:
+        logger.error(f"Error in nearest neighbor thickness interpolation at {point_2d}: {e}")
         return 0.0
 
 

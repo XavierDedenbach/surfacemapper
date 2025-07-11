@@ -422,108 +422,20 @@ class AnalysisExecutor:
         else:
             print(f"DEBUG: No boundary provided, skipping boundary clipping")
         
-        # Check if we need to generate a baseline surface
-        generate_base_surface = params.get('generate_base_surface', False)
-        print(f"DEBUG: Generate base surface flag: {generate_base_surface}")
-        if generate_base_surface and len(surfaces_to_process) == 1:
-            print(f"DEBUG: Generating baseline surface")
-            logger.info(f"[{analysis_id}] Generating baseline surface 1 foot below minimum elevation")
-            self._update_job_status(analysis_id, "running", 45.0, "generating_baseline")
-            
-            # Get the first (and only) surface
-            first_surface = surfaces_to_process[0]
-            vertices = first_surface['vertices']
-            print(f"DEBUG: Baseline generation - using {len(vertices)} vertices from first surface")
-            
-            # Check if the first surface is in UTM coordinates (large values) or WGS84 (small values)
-            x_range = np.max(vertices[:, 0]) - np.min(vertices[:, 0])
-            y_range = np.max(vertices[:, 1]) - np.min(vertices[:, 1])
-            
-            print(f"DEBUG: First surface coordinate ranges - X: {x_range:.2f}, Y: {y_range:.2f}")
-            
-            # If coordinates are large (UTM), generate baseline in UTM
-            # If coordinates are small (WGS84), generate baseline in WGS84
-            is_utm = x_range > 1000 or y_range > 1000  # UTM coordinates are typically in thousands of meters
-            
-            if is_utm:
-                print(f"DEBUG: First surface is in UTM coordinates, generating baseline in UTM")
-                # Use the UTM extent of the first surface for baseline generation
-                min_x, max_x = np.min(vertices[:, 0]), np.max(vertices[:, 0])
-                min_y, max_y = np.min(vertices[:, 1]), np.max(vertices[:, 1])
-                print(f"DEBUG: Using UTM extent for baseline: X({min_x:.2f} to {max_x:.2f}), Y({min_y:.2f} to {max_y:.2f})")
-                logger.info(f"[{analysis_id}] Using UTM extent for baseline: X({min_x:.2f} to {max_x:.2f}), Y({min_y:.2f} to {max_y:.2f})")
-            else:
-                print(f"DEBUG: First surface is in WGS84 coordinates, generating baseline in WGS84")
-            # Use boundary coordinates for baseline generation if available
-            if analysis_boundary and 'wgs84_coordinates' in analysis_boundary:
-                # Convert boundary from [lat, lon] to [lon, lat] format
-                boundary_lon_lat = [[coord[1], coord[0]] for coord in analysis_boundary['wgs84_coordinates']]
-                boundary_array = np.array(boundary_lon_lat)
-                
-                # Use boundary extent for baseline generation
-                min_x, max_x = np.min(boundary_array[:, 0]), np.max(boundary_array[:, 0])  # longitude
-                min_y, max_y = np.min(boundary_array[:, 1]), np.max(boundary_array[:, 1])  # latitude
-                print(f"DEBUG: Using boundary extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-                logger.info(f"[{analysis_id}] Using boundary extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-            else:
-                # Fallback to clipped surface extent
-                min_x, max_x = np.min(vertices[:, 0]), np.max(vertices[:, 0])
-                min_y, max_y = np.min(vertices[:, 1]), np.max(vertices[:, 1])
-                print(f"DEBUG: Using clipped surface extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-                logger.info(f"[{analysis_id}] Using clipped surface extent for baseline: lon({min_x:.6f} to {max_x:.6f}), lat({min_y:.6f} to {max_y:.6f})")
-            
-            min_z = np.min(vertices[:, 2])
-            print(f"DEBUG: Minimum Z value: {min_z}")
-            
-            # Create a new grid with a similar number of points
-            num_vertices = len(vertices)
-            # Calculate grid dimensions to approximate original density
-            aspect_ratio = (max_y - min_y) / (max_x - min_x) if (max_x - min_x) != 0 else 1
-            num_x = int(np.sqrt(num_vertices / aspect_ratio))
-            num_y = int(num_x * aspect_ratio)
-
-            # Generate grid points
-            x_coords = np.linspace(min_x, max_x, num_x)
-            y_coords = np.linspace(min_y, max_y, num_y)
-            grid_x, grid_y = np.meshgrid(x_coords, y_coords)
-            
-            # Set the baseline elevation
-            if is_utm:
-                # Convert 1 foot to meters for UTM coordinates
-                baseline_offset = 0.3048  # 1 foot in meters
-            else:
-                # Keep in same units for WGS84 (assuming feet)
-                baseline_offset = 1.0  # 1 foot
-            
-            baseline_z = min_z - baseline_offset
-            print(f"DEBUG: Baseline Z value: {baseline_z}")
-
-            # Create the new baseline vertices
-            baseline_vertices = np.vstack([grid_x.ravel(), grid_y.ravel(), np.full(grid_x.size, baseline_z)]).T
-            print(f"DEBUG: Generated baseline vertices: {len(baseline_vertices)}")
-            
-            # For a grid, we can't reuse the original faces. A simple point cloud is best here.
-            baseline_surface = {
-                "id": f"baseline_{first_surface['id']}",
-                "name": "Baseline Surface (1ft below minimum)",
-                "vertices": baseline_vertices,
-                "faces": []  # Use an empty list instead of None for downstream compatibility
-            }
-            
-            # Add baseline surface to the beginning of the list
-            surfaces_to_process.insert(0, baseline_surface)
-            print(f"DEBUG: Baseline surface added to processing list")
-            logger.info(f"[{analysis_id}] Baseline surface generated with {len(baseline_vertices)} vertices")
+        # Baseline surface generation is deprecated - removed
         
-        # Extract tonnage data from params
+        # Extract tonnage data from params (no baseline adjustment needed)
         tonnage_per_layer = params.get('tonnage_per_layer', [])
-        print(f"DEBUG: Tonnage per layer: {tonnage_per_layer}")
-        logger.info(f"[{analysis_id}] Tonnage data: {tonnage_per_layer}")
+        print(f"DEBUG: Original params keys: {list(params.keys())}")
+        print(f"DEBUG: Tonnage per layer from params: {tonnage_per_layer}")
+        logger.info(f"[{analysis_id}] Tonnage data from params: {tonnage_per_layer}")
         
         processing_params = params.get('params', {})
+        print(f"DEBUG: Processing params before adding tonnage: {processing_params}")
         # Add tonnage data to processing params
         processing_params['tonnage_per_layer'] = tonnage_per_layer
         print(f"DEBUG: Processing parameters with tonnage: {processing_params}")
+        logger.info(f"[{analysis_id}] Final processing params: {processing_params}")
         
         print(f"DEBUG: Starting surface processing with {len(surfaces_to_process)} surfaces")
         logger.info(f"[{analysis_id}] Starting surface processing with {len(surfaces_to_process)} surfaces")
@@ -551,7 +463,7 @@ class AnalysisExecutor:
             raise RuntimeError("Failed to serialize analysis results")
 
         # Determine if the analysis is considered complete
-        is_volume_analysis = len(surfaces_to_process) > 1 or params.get('generate_base_surface')
+        is_volume_analysis = len(surfaces_to_process) > 1
         results_are_ready = not is_volume_analysis or ('volume_results' in serializable_results and serializable_results['volume_results'])
         print(f"DEBUG: Analysis type - is_volume_analysis: {is_volume_analysis}, results_are_ready: {results_are_ready}")
 

@@ -710,6 +710,8 @@ class SurfaceProcessor:
         tonnage_dict = {item['layer_index']: item['tonnage'] for item in tonnage_per_layer}
         
         logger.info(f"Processing {len(processed_surfaces)} surfaces for volume/thickness calculation")
+        logger.info(f"Tonnage data: {tonnage_per_layer}")
+        logger.info(f"Tonnage dict: {tonnage_dict}")
         
         for i in range(len(processed_surfaces) - 1):
             lower_surface = processed_surfaces[i]
@@ -742,8 +744,9 @@ class SurfaceProcessor:
             logger.info(f"  Volume calculation complete: {volume_result.volume_cubic_yards:.2f} cubic yards")
 
             # Calculate compaction rate if tonnage is available
-            compaction_rate = None
+            # Direct mapping: processing index i = tonnage layer i (no baseline)
             tonnage_used = tonnage_dict.get(i)
+            compaction_rate = None  # Initialize compaction_rate
             logger.info(f"  Layer {i} tonnage lookup: {tonnage_used} (from tonnage_dict: {tonnage_dict})")
             if tonnage_used and volume_result.volume_cubic_yards > 0:
                 # Assuming tonnage is in US tons, material density in lbs/cubic yard

@@ -183,11 +183,19 @@ async def point_query(
     if results.get("analysis_metadata", {}).get("status") != "completed":
         raise HTTPException(status_code=400, detail="Analysis not completed")
 
-    # Get TINs and metadata
-    surface_tins = results.get("surface_tins")
+    # Get surfaces and metadata
+    surfaces = results.get("surfaces")
     surface_names = results.get("surface_names")
-    if surface_tins is None or len(surface_tins) == 0 or surface_names is None or len(surface_names) == 0:
-        raise HTTPException(status_code=500, detail="Surface TINs not available")
+    if surfaces is None or len(surfaces) == 0 or surface_names is None or len(surface_names) == 0:
+        raise HTTPException(status_code=500, detail="Surfaces not available")
+    
+    # Convert vertices back to numpy arrays and create TINs
+    surface_points = [np.array(s["vertices"]) for s in surfaces]
+    surface_tins = []
+    for pts in surface_points:
+        tin = triangulation.create_delaunay_triangulation(pts[:, :2])
+        setattr(tin, 'z_values', pts[:, 2])
+        surface_tins.append(tin)
 
     # Get georeference metadata
     georef = results.get("georef")
@@ -226,8 +234,9 @@ async def point_query(
         upper_z = thickness_calculator._interpolate_z_at_point(point, upper_tin)
         lower_z = thickness_calculator._interpolate_z_at_point(point, lower_tin)
         if np.isnan(upper_z) or np.isnan(lower_z):
-            thickness = None
-            logger.info(f"  Layer {i}: Invalid thickness (upper_z={upper_z}, lower_z={lower_z})")
+            # Try nearest neighbor interpolation as fallback
+            thickness = thickness_calculator._interpolate_nearest_thickness(point, upper_tin, lower_tin)
+            logger.info(f"  Layer {i}: Using nearest neighbor thickness={thickness:.3f} feet (direct interpolation failed)")
         else:
             thickness = upper_z - lower_z
             logger.info(f"  Layer {i}: thickness={thickness:.3f} feet (upper_z={upper_z:.3f}, lower_z={lower_z:.3f})")
@@ -276,10 +285,18 @@ async def batch_point_query(
     if results.get("analysis_metadata", {}).get("status") != "completed":
         raise HTTPException(status_code=400, detail="Analysis not completed")
 
-    surface_tins = results.get("surface_tins")
+    surfaces = results.get("surfaces")
     surface_names = results.get("surface_names")
-    if surface_tins is None or len(surface_tins) == 0 or surface_names is None or len(surface_names) == 0:
-        raise HTTPException(status_code=500, detail="Surface TINs not available")
+    if surfaces is None or len(surfaces) == 0 or surface_names is None or len(surface_names) == 0:
+        raise HTTPException(status_code=500, detail="Surfaces not available")
+    
+    # Convert vertices back to numpy arrays and create TINs
+    surface_points = [np.array(s["vertices"]) for s in surfaces]
+    surface_tins = []
+    for pts in surface_points:
+        tin = triangulation.create_delaunay_triangulation(pts[:, :2])
+        setattr(tin, 'z_values', pts[:, 2])
+        surface_tins.append(tin)
 
     # Prepare points array (transform if needed)
     batch_points = []
@@ -311,7 +328,8 @@ async def batch_point_query(
             upper_z = thickness_calculator._interpolate_z_at_point(pt, upper_tin)
             lower_z = thickness_calculator._interpolate_z_at_point(pt, lower_tin)
             if np.isnan(upper_z) or np.isnan(lower_z):
-                thickness = None
+                # Try nearest neighbor interpolation as fallback
+                thickness = thickness_calculator._interpolate_nearest_thickness(pt, upper_tin, lower_tin)
             else:
                 thickness = upper_z - lower_z
             thickness_layers.append({
@@ -700,7 +718,8 @@ async def thickness_grid_csv(
                 if not np.isnan(upper_z) and not np.isnan(lower_z):
                     thickness = upper_z - lower_z
                 else:
-                    thickness = ''
+                    # Try to find nearest valid point for interpolation
+                    thickness = thickness_calculator._interpolate_nearest_thickness(pt, tins[i+1], tins[i])
                 row.append(thickness)
             writer.writerow(row)
             yield output.getvalue()

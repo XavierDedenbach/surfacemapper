@@ -35,6 +35,7 @@ function App() {
   // Point query state
   const [hoverInfo, setHoverInfo] = useState(null); // { x, y, thickness, lat, lon }
   const [pointQueryLoading, setPointQueryLoading] = useState(false);
+  const [lastQueryPoint, setLastQueryPoint] = useState(null); // { x, y } for distance threshold
 
   useEffect(() => {
     let timer;
@@ -201,6 +202,23 @@ function App() {
     // Use only analysis_id from analysisResult
     const analysisId = analysisResult?.analysis_id;
     if (!analysisId) return;
+    
+    // Check if mouse has moved more than 1 foot from last query point
+    const distanceThreshold = 1.0; // 1 foot in UTM coordinates
+    const currentPoint = { x, y };
+    
+    if (lastQueryPoint) {
+      const distance = Math.sqrt(
+        Math.pow(currentPoint.x - lastQueryPoint.x, 2) + 
+        Math.pow(currentPoint.y - lastQueryPoint.y, 2)
+      );
+      
+      if (distance < distanceThreshold) {
+        // Mouse hasn't moved enough, keep existing hover info
+        return;
+      }
+    }
+    
     setPointQueryLoading(true);
     setHoverInfo(null);
     try {
@@ -223,7 +241,7 @@ function App() {
       const averageThickness = layerCount > 0 ? totalThickness / layerCount : 
                               (thicknessLayers[0]?.thickness_feet || null);
       
-      setHoverInfo({
+      const newHoverInfo = {
         x: response?.query_point?.x,
         y: response?.query_point?.y,
         thickness: averageThickness,
@@ -231,7 +249,10 @@ function App() {
         lon: response?.query_point?.lon,
         layerCount: layerCount,
         totalThickness: totalThickness
-      });
+      };
+      
+      setHoverInfo(newHoverInfo);
+      setLastQueryPoint(currentPoint);
     } catch (error) {
       console.error('Point query error:', error);
       setHoverInfo(null);
@@ -244,6 +265,7 @@ function App() {
   const handleMouseLeave = () => {
     setHoverInfo(null);
     setPointQueryLoading(false);
+    setLastQueryPoint(null); // Reset last query point when mouse leaves
   };
 
   const renderContent = () => {
