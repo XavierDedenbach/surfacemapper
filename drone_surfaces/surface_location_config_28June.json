@@ -1,0 +1,32 @@
+{
+  "layer_0": {
+    "tonnage": 0,
+    "georeference": {
+      "wgs84_lat": 40.1496586,
+      "wgs84_lon": -79.8551200,
+      "scaling_factor": 1.0,
+      "orientation": 360
+    }
+  },
+  "layer_1": {
+    "tonnage": 320,
+    "georeference": {
+      "wgs84_lat": 40.1496586,
+      "wgs84_lon": -79.8551200,
+      "scaling_factor": 1.0,
+      "orientation": 360
+    }
+  },
+  "analysis_boundary": {
+    "coordinates": [
+      { "lat": 40.1499377, "lon": -79.8549161 },
+      { "lat": 40.1495839, "lon": -79.8548413 },
+      { "lat": 40.1493940, "lon": -79.8553199 },
+      { "lat": 40.1497188, "lon": -79.8553985 }
+    ]
+  },
+
+  "description": "Test configuration for June 28th surface analysis",
+  "date": "2025-06-28",
+  "file_type": "shp"
+} 
